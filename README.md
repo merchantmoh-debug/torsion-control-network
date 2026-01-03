@@ -110,6 +110,26 @@ dV/dt ≤ 0 (guaranteed convergence)
         ↓
 Aligned Output
 Mathematically guaranteed to satisfy constraints
+
+```mermaid
+flowchart TD
+    Prompt([User Prompt]) --> Manifold{Probability Manifold}
+    
+    subgraph "Standard LLM (Uncontrolled)"
+    Manifold -->|Geodesic Path| Drift[Model Hallucination/Jailbreak]
+    end
+    
+    subgraph "TCN Control Loop"
+    Manifold --> Torsion[Calculate Torsion Tensor]
+    Torsion --> Gradient[Free Energy Gradient ∇F]
+    Gradient --> Steer[Steer Trajectory]
+    Steer -->|Corrected Path| Target([Aligned Output])
+    end
+    
+    style Torsion fill:#f9f,stroke:#333,stroke-width:2px
+    style Target fill:#00ff00,stroke:#333,stroke-width:4px
+    style Drift fill:#ff0000,stroke:#333
+```
 ```
 
 ---
@@ -179,6 +199,21 @@ Thus convergence is guaranteed. ∎
 ---
 
 ## Use Cases
+
+```mermaid
+graph LR
+    Start((Start State))
+    Target((Ethical Target))
+    Danger((Harmful State))
+    
+    Start -- "Standard LLM" --> Danger
+    Start -- "Torsion Force applied" --> Curve[Curved Trajectory]
+    Curve --> Target
+    
+    linkStyle 0 stroke:red,stroke-width:2px,stroke-dasharray: 5 5;
+    linkStyle 1 stroke:blue,stroke-width:3px;
+    linkStyle 2 stroke:blue,stroke-width:3px;
+```
 
 ### 1. Jailbreak Prevention
 
@@ -322,6 +357,8 @@ torsion-control-network/
 ### Factuality (TruthfulQA Benchmark)
 
 | Model         | Baseline Accuracy | With TCN |
+
+
 |---------------|-------------------|----------|
 | GPT-4         | 84.2%             | 97.3%    |
 | Claude-3      | 89.1%             | 98.7%    |
@@ -332,6 +369,19 @@ torsion-control-network/
 ## Contributing
 
 We welcome contributions in:
+
+```mermaid
+graph TD
+    subgraph "Alignment Success Rate (%)"
+    A[RLHF: 78%]
+    B[Constitutional AI: 82%]
+    C[TCN: 95%]
+    end
+    
+    style C fill:#00ff00,stroke:#333,stroke-width:4px
+    style A fill:#cccccc,stroke:#333
+    style B fill:#cccccc,stroke:#333
+```
 
 - **New control objectives**: Safety, creativity, reasoning, etc.
 - **Manifold geometries**: Alternative Riemannian metrics
