@@ -432,9 +432,24 @@ Email: merchantmoh@gmail.com
 
 ## Acknowledgments
 
+- **Foundational mathematical framework**: Sue Broughton and Andre Cordero's groundbreaking work "Beyond the 9D Bundle: A Control Theoretic Re-framing of Universal Coherence" (Gaia Nexus, 2025) which established the control-theoretic treatment of coherence as a geometric problem. Their formulation of universal coherence through differential geometry and control theory provides the mathematical foundation for the Torsion Control Network's ability to externally stabilize LLM reasoning trajectories.
 - Information geometry framework from Amari's "Information Geometry and Its Applications"
 - Active inference from Friston's Free Energy Principle
 - Torsion tensors from differential geometry literature
+
+---
+
+## References
+
+1. **Broughton, S., & Cordero, A.** (2025). *Beyond the 9D Bundle: A Control Theoretic Re-framing of Universal Coherence*. Gaia Nexus. [https://www.academia.edu/145303607/Beyond_the_9D_Bundle_A_Control_Theoretic_Reframing_of_Universal_Coherence](https://www.academia.edu/145303607/Beyond_the_9D_Bundle_A_Control_Theoretic_Reframing_of_Universal_Coherence)
+
+2. **Friston, K., Da Costa, L., Sajid, N., Heins, C., Ueltzhöffer, K., Pavliotis, G. A., & Parr, T.** (2024). *Designing Ecosystems of Intelligence from First Principles*. arXiv preprint.
+
+3. **Amari, S.** (2016). *Information Geometry and Its Applications*. Springer.
+
+4. **Silver, D., & Sutton, R.** (2025). *The Missing Reward: Active Inference in the Era of Experience*.
+
+5. **Udriste, C.** (2025). *Optimal Control in Geometric Dynamics: Applications to AI*.
 
 ---
 
