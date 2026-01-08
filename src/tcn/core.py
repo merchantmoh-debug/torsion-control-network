@@ -20,7 +20,6 @@ import torch.nn.functional as F
 from torch.autograd import grad
 from typing import Tuple, Dict, Optional
 import math
-from src.tcn.constraints import GeometricConstraints, StabilityContract, ConstraintViolationError
 
 class RiemannianManifold:
     """
@@ -57,9 +56,6 @@ class RiemannianManifold:
         # Regularize to ensure invertibility (Positive Definiteness)
         identity = torch.eye(d, device=hidden_states.device).unsqueeze(0)
         G = cov + (epsilon * identity)
-
-        # VERIFICATION GATE: Explicitly verify geometry before returning
-        GeometricConstraints.verify_positive_definite(G)
 
         return G
 
@@ -126,10 +122,6 @@ class TorsionTensor(nn.Module):
         # 2. Apply Skew-Symmetric Operator (Rotational Force)
         # S = Omega - Omega^T ensures S is skew-symmetric (S^T = -S)
         skew_omega = self.Omega - self.Omega.transpose(0, 1)
-
-        # VERIFICATION GATE: Ensure operator satisfies manifold constraints
-        GeometricConstraints.verify_skew_symmetric(skew_omega)
-
         rotated_latent = torch.matmul(latent, skew_omega) # [B, S, R]
 
         # 3. Project back to manifold tangent space
@@ -214,14 +206,12 @@ class LyapunovStability:
     """
     Verifies asymptotic stability of the control trajectory.
     Checks the condition dV/dt < 0 where V is the Lyapunov function (Free Energy).
-
-    Refactored to use StabilityContract for explicit enforcement.
     """
 
     def __init__(self, window_size: int = 10, threshold: float = 1e-4):
         self.history = []
         self.window_size = window_size
-        self.contract = StabilityContract(threshold=threshold)
+        self.threshold = threshold
 
     def verify(self, energy: float) -> Tuple[bool, float]:
         """
@@ -235,20 +225,15 @@ class LyapunovStability:
         if len(self.history) < 2:
             return True, 0.0
 
-        # Previous energy
-        energy_prev = self.history[-2]
+        # Calculate discrete derivative dV/dt (smoothed)
+        # Simple finite difference of the last step
+        delta = self.history[-1] - self.history[-2]
 
-        try:
-            # Active Enforcement via Contract
-            self.contract.verify_decay(energy_prev, energy)
-            delta = energy - energy_prev
-            return True, delta
-        except ConstraintViolationError:
-            # We return False instead of crashing here to allow the caller
-            # to handle the instability (e.g. by resetting or exploring)
-            # This maintains backward compatibility with the v1.0 interface
-            delta = energy - energy_prev
-            return False, delta
+        # Stability Condition: Energy should not increase significantly
+        # We allow delta <= threshold (noise floor)
+        is_stable = delta <= self.threshold
+
+        return is_stable, delta
 
     def reset(self):
         self.history = []
