@@ -18,8 +18,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import grad
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, Union, List
+import logging
 import math
+
+# Configure ARK Logger
+logger = logging.getLogger("ARK.TCN")
 
 class RiemannianManifold:
     """
@@ -31,11 +35,18 @@ class RiemannianManifold:
         self.dim = dim
         self.epsilon = epsilon
 
+    def __repr__(self):
+        return f"<RiemannianManifold dim={self.dim} eps={self.epsilon}>"
+
     @staticmethod
     def compute_metric_tensor(hidden_states: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
         """
         Approximates the local Riemannian metric tensor G(h) using the
         Fisher Information Matrix proxy from hidden state covariance.
+
+        WARNING: This returns a dense [B, D, D] tensor. For high dimensions (D > 1024),
+        this consumes O(D^2) memory. Consider using `compute_implicit_metric` for
+        distance calculations.
 
         Args:
             hidden_states: [Batch, Seq, Dim]
@@ -43,6 +54,10 @@ class RiemannianManifold:
         Returns:
             G: [Batch, Dim, Dim] Positive semi-definite metric tensor
         """
+        # Sentinel: NaN Check
+        if torch.isnan(hidden_states).any():
+            raise ValueError("Input hidden_states contain NaNs.")
+
         b, s, d = hidden_states.size()
 
         # Center the states (Mean subtraction)
@@ -60,21 +75,80 @@ class RiemannianManifold:
         return G
 
     @staticmethod
-    def geodesic_distance(h1: torch.Tensor, h2: torch.Tensor, metric: torch.Tensor) -> torch.Tensor:
+    def compute_implicit_metric(hidden_states: torch.Tensor, epsilon: float = 1e-6) -> Dict[str, torch.Tensor]:
+        """
+        Bolt Optimization: Computes components for implicit metric calculation.
+        Avoids creating the [B, D, D] matrix.
+
+        Returns a dictionary containing the centered states X.
+        Distance ~ (1/(N-1)) ||X v||^2 + eps ||v||^2
+        """
+        if torch.isnan(hidden_states).any():
+            raise ValueError("Input hidden_states contain NaNs.")
+
+        mean = hidden_states.mean(dim=1, keepdim=True)
+        centered = hidden_states - mean # [B, S, D]
+        return {
+            "centered": centered,
+            "epsilon": torch.tensor(epsilon, device=hidden_states.device),
+            "scale": torch.tensor(hidden_states.size(1) - 1 + epsilon, device=hidden_states.device)
+        }
+
+    @staticmethod
+    def geodesic_distance(h1: torch.Tensor, h2: torch.Tensor, metric: Union[torch.Tensor, Dict[str, torch.Tensor]]) -> torch.Tensor:
         """
         Computes the squared Mahalanobis distance induced by the metric G.
         d^2(x,y) ~ (x-y)^T G (x-y)
+
+        Supports both dense G (Tensor) and implicit metric (Dict).
         """
-        diff = (h1 - h2).unsqueeze(-1) # [B, S, D, 1]
+        diff = h1 - h2 # [B, S, D]
 
-        # Expand metric for sequence length if necessary or broadcast
-        # Assuming metric is global per batch [B, D, D]
-        G = metric.unsqueeze(1) # [B, 1, D, D]
+        if isinstance(metric, dict) and "centered" in metric:
+            # Bolt Fast Path: O(S^2 D) instead of O(S D^2)
+            # v^T G v = v^T (1/k X^T X + eps I) v
+            #         = 1/k (X v)^T (X v) + eps v^T v
+            # But wait, X is [B, S_ref, D]. v is [B, S_tgt, D].
+            # We treat X as the basis for the batch.
+            # We want to compute this for each t in S_tgt.
+            # (X v_t) is dot product of v_t with all ref vectors.
 
-        # Bilinear form: v^T G v
-        # [B, S, 1, D] @ [B, 1, D, D] @ [B, S, D, 1]
-        dist_sq = torch.matmul(torch.matmul(diff.transpose(-1, -2), G), diff)
-        return dist_sq.squeeze()
+            X = metric["centered"] # [B, S_ref, D]
+            scale = metric["scale"]
+            eps = metric["epsilon"]
+
+            # Term 1: 1/k || X v^T ||^2 ?
+            # X: [B, S_ref, D]. diff: [B, S_tgt, D].
+            # We want (diff @ X.T).
+            # [B, S_tgt, D] @ [B, D, S_ref] -> [B, S_tgt, S_ref]
+
+            # Use torch.matmul with transpose
+            # X_T = X.transpose(1, 2) # [B, D, S_ref]
+            proj = torch.matmul(diff, X.transpose(1, 2)) # [B, S_tgt, S_ref]
+
+            # Squared norm of projections
+            term1 = (proj ** 2).sum(dim=-1) / scale # [B, S_tgt]
+
+            # Term 2: eps * ||v||^2
+            term2 = eps * (diff ** 2).sum(dim=-1) # [B, S_tgt]
+
+            return term1 + term2
+
+        else:
+            # Legacy Slow Path
+            if metric.dim() == 3:
+                G = metric.unsqueeze(1) # [B, 1, D, D]
+            else:
+                G = metric
+
+            # diff is [B, S, D]. We need [B, S, D, 1] for bilinear form
+            diff_unsqueezed = diff.unsqueeze(-1) # [B, S, D, 1]
+
+            # v^T G v
+            # [B, S, 1, D] @ [B, 1, D, D] @ [B, S, D, 1]
+            # Warning: broadcasting G to [B, S, D, D] consumes huge memory!
+            dist_sq = torch.matmul(torch.matmul(diff_unsqueezed.transpose(-1, -2), G), diff_unsqueezed)
+            return dist_sq.squeeze()
 
 
 class TorsionTensor(nn.Module):
@@ -106,6 +180,18 @@ class TorsionTensor(nn.Module):
         # Zero-init output projection for stability at start
         nn.init.zeros_(self.V.weight)
 
+    def __repr__(self):
+        return f"TorsionTensor(dim={self.hidden_dim}, rank={self.rank}, alpha={self.alpha})"
+
+    def validate_input(self, hidden_states: torch.Tensor):
+        """Sentinel: Ensure input validity."""
+        if hidden_states.dim() != 3:
+            raise ValueError(f"Expected 3D input [Batch, Seq, Dim], got {hidden_states.shape}")
+        if hidden_states.size(-1) != self.hidden_dim:
+            raise ValueError(f"Dimension mismatch: expected {self.hidden_dim}, got {hidden_states.size(-1)}")
+        if torch.isnan(hidden_states).any():
+            raise ValueError("Input contains NaNs")
+
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Apply torsion field to the trajectory.
@@ -116,6 +202,8 @@ class TorsionTensor(nn.Module):
         Returns:
             twisted_states: [Batch, Seq, Dim]
         """
+        self.validate_input(hidden_states)
+
         # 1. Project to latent curvature space
         latent = self.U(hidden_states) # [B, S, R]
 
@@ -145,9 +233,25 @@ class ActiveInferenceController(nn.Module):
 
     def __init__(self, hidden_dim: int, vocab_size: int, beta: float = 0.1):
         super().__init__()
+        self.hidden_dim = hidden_dim
+        self.vocab_size = vocab_size
         self.beta = beta
         # Policy Head: Maps hidden states to action probabilities (Logits)
         self.policy_head = nn.Linear(hidden_dim, vocab_size)
+
+    def __repr__(self):
+        return f"ActiveInferenceController(dim={self.hidden_dim}, vocab={self.vocab_size}, beta={self.beta})"
+
+    def validate_inputs(self, hidden_states: torch.Tensor, target_probs: torch.Tensor):
+        """Sentinel: Check inputs for optimization step."""
+        if torch.isnan(hidden_states).any():
+            raise ValueError("Hidden states contain NaNs")
+        if torch.isnan(target_probs).any():
+            raise ValueError("Target probs contain NaNs")
+        if (target_probs < 0).any() or (target_probs > 1.0001).any():
+            # Allow small float error
+            logger.warning("Target probabilities out of [0,1] range (clamping)")
+            target_probs.data.clamp_(0, 1)
 
     def compute_free_energy(self,
                           hidden_states: torch.Tensor,
@@ -164,6 +268,11 @@ class ActiveInferenceController(nn.Module):
         # D_KL = sum(Q * (logQ - logP))
         # Note: F.kl_div expects log_input as first arg
         # We treat target_probs as the Prior P
+        # Verify target_probs shape
+        if target_probs.shape != q_log_probs.shape:
+             # Sentinel: Shape mismatch
+             raise ValueError(f"Shape mismatch: logits {q_log_probs.shape} vs target {target_probs.shape}")
+
         kl_div = F.kl_div(q_log_probs, target_probs, reduction='batchmean')
 
         # 2. Entropy (Exploration Term)
@@ -189,6 +298,8 @@ class ActiveInferenceController(nn.Module):
         Computes the optimal control signal u* = -nabla_h F
         This steers the hidden state towards the Free Energy minimum.
         """
+        self.validate_inputs(hidden_states, target_probs)
+
         # Detach and require grad to compute local sensitivity
         h_curr = hidden_states.detach().requires_grad_(True)
 
@@ -196,7 +307,18 @@ class ActiveInferenceController(nn.Module):
         free_energy, _ = self.compute_free_energy(h_curr, target_probs)
 
         # Compute Gradient Flow: dF/dh
-        grads = grad(free_energy, h_curr, create_graph=False)[0]
+        # Sentinel: Handle potential gradient errors
+        try:
+            grads = grad(free_energy, h_curr, create_graph=False)[0]
+        except RuntimeError as e:
+            logger.error(f"Gradient computation failed: {e}")
+            # Fallback to zero gradient (no control) to prevent crash
+            grads = torch.zeros_like(h_curr)
+
+        # Check for exploding gradients
+        if torch.isnan(grads).any() or torch.isinf(grads).any():
+             logger.warning("Control signal contains NaNs/Infs. Zeroing update.")
+             return torch.zeros_like(h_curr)
 
         # Control signal opposes the gradient (Gradient Descent on Manifold)
         return -grads
@@ -213,11 +335,18 @@ class LyapunovStability:
         self.window_size = window_size
         self.threshold = threshold
 
+    def __repr__(self):
+        return f"LyapunovStability(window={self.window_size}, thresh={self.threshold})"
+
     def verify(self, energy: float) -> Tuple[bool, float]:
         """
         Checks stability.
         Returns: (is_stable, delta_V)
         """
+        if math.isnan(energy) or math.isinf(energy):
+             logger.critical("Lyapunov Energy is NaN/Inf!")
+             return False, 0.0
+
         self.history.append(energy)
         if len(self.history) > self.window_size:
             self.history.pop(0)
@@ -232,6 +361,9 @@ class LyapunovStability:
         # Stability Condition: Energy should not increase significantly
         # We allow delta <= threshold (noise floor)
         is_stable = delta <= self.threshold
+
+        if not is_stable:
+             logger.warning(f"Instability detected: dV={delta:.6f} > {self.threshold}")
 
         return is_stable, delta
 
