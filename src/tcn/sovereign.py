@@ -30,6 +30,7 @@ class SovereignEntity(nn.Module):
         self.sys4_intel = FutureRadar()
         self.sys5_policy = SoundHeart()
 
+    @torch.compile # Bolt: Optimize the main feedback loop
     def generate_step(self,
                      hidden_states: torch.Tensor,
                      target_probs: torch.Tensor,
@@ -77,7 +78,8 @@ class SovereignEntity(nn.Module):
 
         # 2. Apply Control Gradient (Geodesic Steering)
         # x_new = x_twisted + correction
-        final_state = twisted_state + smooth_correction
+        # Bolt: In-place addition for memory efficiency
+        final_state = twisted_state.add_(smooth_correction)
 
         return {
             "state": final_state,
