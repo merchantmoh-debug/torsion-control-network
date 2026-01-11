@@ -3,8 +3,8 @@ import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 import torch
-from src.tcn.sovereign import SovereignEntity
-from src.tcn.core import TorsionTensor
+from tcn.sovereign import SovereignEntity
+from tcn.core import TorsionTensor
 
 st.set_page_config(layout="wide", page_title="TCN Sovereign Dashboard")
 

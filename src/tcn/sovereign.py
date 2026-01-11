@@ -78,8 +78,7 @@ class SovereignEntity(nn.Module):
 
         # 2. Apply Control Gradient (Geodesic Steering)
         # x_new = x_twisted + correction
-        # Bolt: In-place addition for memory efficiency
-        final_state = twisted_state.add_(smooth_correction)
+        final_state = twisted_state + smooth_correction
 
         return {
             "state": final_state,
