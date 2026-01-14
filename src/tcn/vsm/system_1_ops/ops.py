@@ -29,6 +29,7 @@ class KineticOperator(nn.Module):
         """
         return self.manifold.compute_metric_tensor(hidden_states)
 
+    @torch.compile # Bolt: Optimize this hot path
     def apply_torsion(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Applies the 'Twist' to the trajectory.
