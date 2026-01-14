@@ -8,7 +8,7 @@ Handles Riemannian Manifold geometry and Torsion Tensor operations.
 
 import torch
 import torch.nn as nn
-from src.tcn.core import RiemannianManifold, TorsionTensor # Import old logic for migration
+from tcn.core import RiemannianManifold, TorsionTensor # Import old logic for migration
 # Ideally we would rewrite fully, but for "Refactor" we assume the math is valid
 # and just re-house it in the correct VSM context.
 

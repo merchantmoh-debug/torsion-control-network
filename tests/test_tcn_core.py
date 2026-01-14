@@ -1,7 +1,7 @@
 import torch
 import pytest
 import math
-from src.tcn.core import (
+from tcn.core import (
     RiemannianManifold,
     TorsionTensor,
     ActiveInferenceController,
