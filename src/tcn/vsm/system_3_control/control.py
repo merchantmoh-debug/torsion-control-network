@@ -8,7 +8,7 @@ Refactored from core.py ActiveInferenceController.
 
 import torch
 import torch.nn as nn
-from src.tcn.core import ActiveInferenceController, LyapunovStability
+from tcn.core import ActiveInferenceController, LyapunovStability
 
 class MAOSKernel(nn.Module):
     """
