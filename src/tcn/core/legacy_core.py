@@ -323,6 +323,41 @@ class ActiveInferenceController(nn.Module):
         # Control signal opposes the gradient (Gradient Descent on Manifold)
         return -grads
 
+    def compute_optimization_step(self,
+                                hidden_states: torch.Tensor,
+                                target_probs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, float]]:
+        """
+        Bolt Optimization: Fused Free Energy and Gradient computation.
+        Avoids redundant forward passes.
+
+        Returns:
+            control_signal: -nabla F
+            free_energy: F
+            metrics: dict
+        """
+        self.validate_inputs(hidden_states, target_probs)
+
+        # Detach and require grad
+        h_curr = hidden_states.detach().requires_grad_(True)
+
+        # Compute Energy (Forward Pass)
+        free_energy, metrics = self.compute_free_energy(h_curr, target_probs)
+
+        # Compute Gradients (Backward Pass)
+        try:
+            grads = grad(free_energy, h_curr, create_graph=False)[0]
+        except RuntimeError as e:
+            logger.error(f"Gradient computation failed: {e}")
+            grads = torch.zeros_like(h_curr)
+
+        if torch.isnan(grads).any() or torch.isinf(grads).any():
+             logger.warning("Control signal contains NaNs/Infs. Zeroing update.")
+             control_signal = torch.zeros_like(h_curr)
+        else:
+             control_signal = -grads
+
+        return control_signal, free_energy, metrics
+
 
 class LyapunovStability:
     """
