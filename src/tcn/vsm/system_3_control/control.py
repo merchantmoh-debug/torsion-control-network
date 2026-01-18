@@ -28,10 +28,12 @@ class MAOSKernel(nn.Module):
         Calculates Free Energy and Gradient Control Signal.
         """
         # 1. Calculate Free Energy (VFE)
+        # Bolt Optimization: free_energy is now a Tensor, metrics are detached Tensors
         free_energy, metrics = self.aic.compute_free_energy(hidden_states, target_probs)
 
         # 2. Check Stability (Lyapunov)
-        is_stable, dV = self.lyapunov.verify(free_energy.item())
+        # Bolt Optimization: Pass tensor directly; Lyapunov handles synchronization
+        is_stable, dV = self.lyapunov.verify(free_energy)
 
         # 3. Compute Control Signal (Action)
         # u = -nabla F

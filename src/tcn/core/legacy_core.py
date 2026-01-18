@@ -25,6 +25,14 @@ import math
 # Configure ARK Logger
 logger = logging.getLogger("ARK.TCN")
 
+# Bolt Optimization: JIT Compilation
+# We try to import torch.compile. If not available (older torch), we use a dummy decorator.
+try:
+    from torch import compile as torch_compile
+except ImportError:
+    def torch_compile(func):
+        return func
+
 class RiemannianManifold:
     """
     Utilities for operating on the statistical manifold M of the LLM's latent space.
@@ -39,6 +47,7 @@ class RiemannianManifold:
         return f"<RiemannianManifold dim={self.dim} eps={self.epsilon}>"
 
     @staticmethod
+    @torch_compile
     def compute_metric_tensor(hidden_states: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
         """
         Approximates the local Riemannian metric tensor G(h) using the
@@ -95,6 +104,7 @@ class RiemannianManifold:
         }
 
     @staticmethod
+    @torch_compile
     def geodesic_distance(h1: torch.Tensor, h2: torch.Tensor, metric: Union[torch.Tensor, Dict[str, torch.Tensor]]) -> torch.Tensor:
         """
         Computes the squared Mahalanobis distance induced by the metric G.
@@ -192,6 +202,7 @@ class TorsionTensor(nn.Module):
         if torch.isnan(hidden_states).any():
             raise ValueError("Input contains NaNs")
 
+    @torch_compile
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Apply torsion field to the trajectory.
@@ -253,9 +264,10 @@ class ActiveInferenceController(nn.Module):
             logger.warning("Target probabilities out of [0,1] range (clamping)")
             target_probs.data.clamp_(0, 1)
 
+    @torch_compile
     def compute_free_energy(self,
                           hidden_states: torch.Tensor,
-                          target_probs: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, float]]:
+                          target_probs: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Union[float, torch.Tensor]]]:
         """
         Calculates Variational Free Energy F.
         """
@@ -284,13 +296,15 @@ class ActiveInferenceController(nn.Module):
         # Minimizing F -> Minimize KL (Align) & Maximize Entropy (Explore)
         free_energy = kl_div - (self.beta * entropy)
 
+        # Bolt Optimization: Return detached tensors instead of blocking scalar floats
         metrics = {
-            "F": free_energy.item(),
-            "KL": kl_div.item(),
-            "H": entropy.item()
+            "F": free_energy.detach(),
+            "KL": kl_div.detach(),
+            "H": entropy.detach()
         }
         return free_energy, metrics
 
+    @torch_compile
     def compute_control_signal(self,
                              hidden_states: torch.Tensor,
                              target_probs: torch.Tensor) -> torch.Tensor:
@@ -338,16 +352,22 @@ class LyapunovStability:
     def __repr__(self):
         return f"LyapunovStability(window={self.window_size}, thresh={self.threshold})"
 
-    def verify(self, energy: float) -> Tuple[bool, float]:
+    def verify(self, energy: Union[float, torch.Tensor]) -> Tuple[bool, float]:
         """
         Checks stability.
         Returns: (is_stable, delta_V)
         """
-        if math.isnan(energy) or math.isinf(energy):
+        # Bolt Optimization: Handle Tensor input safely
+        if isinstance(energy, torch.Tensor):
+            val = energy.item()
+        else:
+            val = energy
+
+        if math.isnan(val) or math.isinf(val):
              logger.critical("Lyapunov Energy is NaN/Inf!")
              return False, 0.0
 
-        self.history.append(energy)
+        self.history.append(val)
         if len(self.history) > self.window_size:
             self.history.pop(0)
 
