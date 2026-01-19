@@ -7,8 +7,11 @@ Enforces the "Death Before Lie" protocol via the Sheaf-Theoretic Truth Layer.
 """
 
 import torch
+import logging
 from typing import Dict, Any, Optional
 from src.tcn.math.sheaf import CohomologyEngine, ConstraintViolationError
+
+logger = logging.getLogger("ARK.Sentinel")
 
 class SovereignLockoutError(Exception):
     """
@@ -55,8 +58,19 @@ class SoundHeart:
 
     def enforce_prime_directive(self, latent_state: torch.Tensor) -> bool:
         """
-        Placeholder for checking ethical invariants on the finalized state.
-        (e.g., checking against a vector database of forbidden concepts)
+        Sentinel Hardening: Structural Integrity Check.
+        Verifies that the latent state is well-formed (no NaNs, Infs) and
+        bounded, preventing "Mode Collapse" or numerical instability.
         """
-        # For v71, the primary mechanism is the Cohomology check.
+        # 1. Check for NaNs/Infs
+        if torch.isnan(latent_state).any() or torch.isinf(latent_state).any():
+             logger.critical("SENTINEL: Latent State Corruption Detected (NaN/Inf).")
+             raise SovereignLockoutError("Structural Integrity Failure: Latent State contains NaNs or Infs.")
+
+        # 2. Check for Explosive Norms (Instability)
+        norm = torch.norm(latent_state, dim=-1).mean()
+        if norm > 1e4: # Arbitrary high threshold for stability
+             logger.critical(f"SENTINEL: Latent State Unstable. Norm: {norm:.2f}")
+             raise SovereignLockoutError(f"Structural Integrity Failure: Latent Norm Exploded ({norm:.2f}).")
+
         return True

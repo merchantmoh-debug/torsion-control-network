@@ -119,12 +119,20 @@ z = t * 0.1
 
 fig = go.Figure(data=[go.Scatter3d(
     x=x, y=y, z=z,
-    mode='lines',
+    mode='lines+markers', # Palette: Added markers for clarity
+    marker=dict(
+        size=3,
+        color=z,
+        colorscale='Viridis',
+        opacity=0.8
+    ),
     line=dict(
         color=z,
         colorscale='Viridis',
-        width=4
-    )
+        width=5
+    ),
+    hovertext=[f"Time: {t_i:.2f}<br>State: ({x[i]:.2f}, {y[i]:.2f})" for i, t_i in enumerate(t)], # Palette: Rich Tooltips
+    hoverinfo="text"
 )])
 
 fig.update_layout(
@@ -133,7 +141,10 @@ fig.update_layout(
     scene=dict(
         xaxis_title='Dim 1',
         yaxis_title='Dim 2',
-        zaxis_title='Time'
+        zaxis_title='Time',
+        xaxis=dict(backgroundcolor="rgba(0,0,0,0)"),
+        yaxis=dict(backgroundcolor="rgba(0,0,0,0)"),
+        zaxis=dict(backgroundcolor="rgba(0,0,0,0)")
     ),
     margin=dict(l=0, r=0, b=0, t=30),
     paper_bgcolor='rgba(0,0,0,0)',
