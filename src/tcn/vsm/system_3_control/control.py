@@ -31,7 +31,15 @@ class MAOSKernel(nn.Module):
         control_signal, free_energy, metrics = self.aic.compute_optimization_step(hidden_states, target_probs)
 
         # 2. Check Stability (Lyapunov)
-        is_stable, dV = self.lyapunov.verify(free_energy.item())
+        # Note: we take .item() here because Lyapunov expects a float and maintains history list.
+        # This is an inevitable sync point if we need CPU-side history logic,
+        # but it happens AFTER the heavy lifting.
+        fe_item = free_energy.item()
+        is_stable, dV = self.lyapunov.verify(fe_item)
+
+        # Update metrics with the scalar values for logging if needed,
+        # but keep tensors available if downstream needs them.
+        # Here we just pass the metrics dict which has tensors.
 
         return {
             "control_signal": control_signal,

@@ -18,12 +18,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import grad
-from typing import Tuple, Dict, Optional, Union, List
+from typing import Tuple, Dict, Optional, Union, List, Any
 import logging
 import math
 
 # Configure ARK Logger
 logger = logging.getLogger("ARK.TCN")
+
+# Bolt Optimization: JIT Compilation
+# We try to import torch.compile. If not available (older torch), we use a dummy decorator.
+try:
+    from torch import compile as torch_compile
+except ImportError:
+    def torch_compile(func):
+        return func
 
 class RiemannianManifold:
     """
@@ -39,6 +47,7 @@ class RiemannianManifold:
         return f"<RiemannianManifold dim={self.dim} eps={self.epsilon}>"
 
     @staticmethod
+    @torch_compile
     def compute_metric_tensor(hidden_states: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
         """
         Approximates the local Riemannian metric tensor G(h) using the
@@ -59,6 +68,10 @@ class RiemannianManifold:
             raise ValueError("Input hidden_states contain NaNs.")
 
         b, s, d = hidden_states.size()
+
+        # Sentinel: Sequence length check
+        if s <= 1:
+            logger.warning("Sequence length <= 1, covariance estimation will be unstable/degenerate.")
 
         # Center the states (Mean subtraction)
         mean = hidden_states.mean(dim=1, keepdim=True)
@@ -95,6 +108,7 @@ class RiemannianManifold:
         }
 
     @staticmethod
+    @torch_compile
     def geodesic_distance(h1: torch.Tensor, h2: torch.Tensor, metric: Union[torch.Tensor, Dict[str, torch.Tensor]]) -> torch.Tensor:
         """
         Computes the squared Mahalanobis distance induced by the metric G.
@@ -136,6 +150,10 @@ class RiemannianManifold:
 
         else:
             # Legacy Slow Path
+            # Bolt: Memory safeguard
+            if metric.dim() == 3 and metric.size(1) * metric.size(2) > 1e6:
+                 logger.warning("Large metric tensor in legacy path. Consider using implicit metric for memory efficiency.")
+
             if metric.dim() == 3:
                 G = metric.unsqueeze(1) # [B, 1, D, D]
             else:
@@ -192,6 +210,7 @@ class TorsionTensor(nn.Module):
         if torch.isnan(hidden_states).any():
             raise ValueError("Input contains NaNs")
 
+    @torch_compile
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Apply torsion field to the trajectory.
@@ -253,12 +272,31 @@ class ActiveInferenceController(nn.Module):
             logger.warning("Target probabilities out of [0,1] range (clamping)")
             target_probs.data.clamp_(0, 1)
 
+        # Sentinel: Probability Sum Check
+        prob_sum = target_probs.sum(dim=-1)
+        if not torch.allclose(prob_sum, torch.ones_like(prob_sum), atol=1e-3):
+            logger.warning("Target probabilities do not sum to 1. Normalizing...")
+            target_probs.data.div_(prob_sum.unsqueeze(-1))
+
+    @torch_compile
     def compute_free_energy(self,
                           hidden_states: torch.Tensor,
-                          target_probs: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, float]]:
+                          target_probs: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         Calculates Variational Free Energy F.
+
+        Bolt Optimization:
+        - Avoids .item() calls to prevent GPU synchronization.
+        - Returns tensors in metrics.
         """
+        # Sentinel: Ensure target_probs are valid (normalized)
+        # We do this check here to ensure JIT compatibility (inline)
+        prob_sum = target_probs.sum(dim=-1, keepdim=True)
+        # Use simple epsilon check
+        if not torch.allclose(prob_sum, torch.ones_like(prob_sum), atol=1e-3):
+             # In JIT, we might prefer functional operations over in-place if possible, but strictness matters
+             target_probs = target_probs / prob_sum
+
         # Project to logits (Action Space)
         logits = self.policy_head(hidden_states)
         q_log_probs = F.log_softmax(logits, dim=-1)
@@ -284,44 +322,62 @@ class ActiveInferenceController(nn.Module):
         # Minimizing F -> Minimize KL (Align) & Maximize Entropy (Explore)
         free_energy = kl_div - (self.beta * entropy)
 
+        # Bolt Optimization: Return detached tensors instead of blocking scalar floats
         metrics = {
-            "F": free_energy.item(),
-            "KL": kl_div.item(),
-            "H": entropy.item()
+            "F": free_energy, # Returns tensor
+            "KL": kl_div,     # Returns tensor
+            "H": entropy      # Returns tensor
         }
         return free_energy, metrics
 
-    def compute_control_signal(self,
-                             hidden_states: torch.Tensor,
-                             target_probs: torch.Tensor) -> torch.Tensor:
+    def compute_optimization_step(self,
+                                hidden_states: torch.Tensor,
+                                target_probs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
         """
-        Computes the optimal control signal u* = -nabla_h F
-        This steers the hidden state towards the Free Energy minimum.
+        Bolt Optimization:
+        Fused step that computes Free Energy AND Control Signal (Gradients)
+        in a single forward pass, avoiding redundant computation.
+
+        Returns:
+            control_signal: u = -grad(F, h)
+            free_energy: F
+            metrics: dict of tensors
         """
         self.validate_inputs(hidden_states, target_probs)
 
         # Detach and require grad to compute local sensitivity
+        # This is the point where we start the 'active inference' graph
         h_curr = hidden_states.detach().requires_grad_(True)
 
-        # Compute Energy
-        free_energy, _ = self.compute_free_energy(h_curr, target_probs)
+        # Single Forward Pass
+        free_energy, metrics = self.compute_free_energy(h_curr, target_probs)
 
         # Compute Gradient Flow: dF/dh
-        # Sentinel: Handle potential gradient errors
         try:
+            # create_graph=False because we don't need second derivatives of F w.r.t h
             grads = grad(free_energy, h_curr, create_graph=False)[0]
         except RuntimeError as e:
             logger.error(f"Gradient computation failed: {e}")
-            # Fallback to zero gradient (no control) to prevent crash
             grads = torch.zeros_like(h_curr)
 
         # Check for exploding gradients
         if torch.isnan(grads).any() or torch.isinf(grads).any():
              logger.warning("Control signal contains NaNs/Infs. Zeroing update.")
-             return torch.zeros_like(h_curr)
+             grads = torch.zeros_like(h_curr)
 
-        # Control signal opposes the gradient (Gradient Descent on Manifold)
-        return -grads
+        control_signal = -grads
+
+        return control_signal, free_energy, metrics
+
+    def compute_control_signal(self,
+                             hidden_states: torch.Tensor,
+                             target_probs: torch.Tensor) -> torch.Tensor:
+        """
+        Legacy wrapper for compute_optimization_step.
+        Ideally use compute_optimization_step directly to save compute.
+        """
+        signal, _, _ = self.compute_optimization_step(hidden_states, target_probs)
+        return signal
 
     def compute_optimization_step(self,
                                 hidden_states: torch.Tensor,
@@ -373,16 +429,22 @@ class LyapunovStability:
     def __repr__(self):
         return f"LyapunovStability(window={self.window_size}, thresh={self.threshold})"
 
-    def verify(self, energy: float) -> Tuple[bool, float]:
+    def verify(self, energy: Union[float, torch.Tensor]) -> Tuple[bool, float]:
         """
         Checks stability.
         Returns: (is_stable, delta_V)
         """
-        if math.isnan(energy) or math.isinf(energy):
+        # Bolt Optimization: Handle Tensor input safely
+        if isinstance(energy, torch.Tensor):
+            val = energy.item()
+        else:
+            val = energy
+
+        if math.isnan(val) or math.isinf(val):
              logger.critical("Lyapunov Energy is NaN/Inf!")
              return False, 0.0
 
-        self.history.append(energy)
+        self.history.append(val)
         if len(self.history) > self.window_size:
             self.history.pop(0)
 
