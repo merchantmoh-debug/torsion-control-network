@@ -70,8 +70,16 @@ if "sovereign" not in st.session_state:
 
 # Sidebar Controls
 st.sidebar.header("🕹️ Command Deck")
-torsion_strength = st.sidebar.slider("Torsion Strength (Curvature)", 0.0, 1.0, 0.5, help="Controls the magnitude of the skew-symmetric twist.")
-entropy_threshold = st.sidebar.slider("Free Energy Limit", 0.0, 1.0, 0.1, help="Max allowable variational free energy before correction.")
+torsion_strength = st.sidebar.slider("Torsion Strength (Curvature)", 0.0, 1.0, 0.5, help="Controls the magnitude of the skew-symmetric twist applied to the latent trajectory.")
+entropy_threshold = st.sidebar.slider("Free Energy Limit", 0.0, 1.0, 0.1, help="Max allowable variational free energy before correction triggers.")
+
+if st.sidebar.button("Reset Simulation", help="Clear telemetry history and reset sovereign state"):
+    st.session_state.history = {
+        "torsion": [],
+        "entropy": [],
+        "stability": []
+    }
+    st.rerun()
 
 # Main Dashboard Layout
 col1, col2, col3 = st.columns(3)
@@ -154,4 +162,19 @@ with chart_col2:
 
 # Footer
 st.markdown("---")
-st.markdown(f"**ARK ATTENTION OVERRIDE v64.0** | System Time: {time.strftime('%H:%M:%S')}")
+col_foot1, col_foot2 = st.columns([3, 1])
+with col_foot1:
+    st.markdown(f"**ARK ATTENTION OVERRIDE v64.0** | System Time: {time.strftime('%H:%M:%S')}")
+with col_foot2:
+    if st.button("Connect MAOS Kernel", disabled=True, help="Live kernel connection unavailable in this environment"):
+        pass
+
+with st.expander("ℹ️ System Architecture Documentation"):
+    st.markdown("""
+    **Torsion Control Network (TCN)** utilizes:
+    - **Riemannian Geometry**: To model the latent space as a manifold.
+    - **Active Inference**: To minimize variational free energy.
+    - **Torsion Tensors**: To steer trajectories away from harmful regions.
+
+    *Powered by ARK ASCENDANCE v64.0*
+    """)

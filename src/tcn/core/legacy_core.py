@@ -69,6 +69,10 @@ class RiemannianManifold:
 
         b, s, d = hidden_states.size()
 
+        # Sentinel: Sequence length check
+        if s <= 1:
+            logger.warning("Sequence length <= 1, covariance estimation will be unstable/degenerate.")
+
         # Center the states (Mean subtraction)
         mean = hidden_states.mean(dim=1, keepdim=True)
         centered = hidden_states - mean
@@ -146,6 +150,10 @@ class RiemannianManifold:
 
         else:
             # Legacy Slow Path
+            # Bolt: Memory safeguard
+            if metric.dim() == 3 and metric.size(1) * metric.size(2) > 1e6:
+                 logger.warning("Large metric tensor in legacy path. Consider using implicit metric for memory efficiency.")
+
             if metric.dim() == 3:
                 G = metric.unsqueeze(1) # [B, 1, D, D]
             else:
@@ -264,6 +272,12 @@ class ActiveInferenceController(nn.Module):
             logger.warning("Target probabilities out of [0,1] range (clamping)")
             target_probs.data.clamp_(0, 1)
 
+        # Sentinel: Probability Sum Check
+        prob_sum = target_probs.sum(dim=-1)
+        if not torch.allclose(prob_sum, torch.ones_like(prob_sum), atol=1e-3):
+            logger.warning("Target probabilities do not sum to 1. Normalizing...")
+            target_probs.data.div_(prob_sum.unsqueeze(-1))
+
     @torch_compile
     def compute_free_energy(self,
                           hidden_states: torch.Tensor,
@@ -271,6 +285,14 @@ class ActiveInferenceController(nn.Module):
         """
         Calculates Variational Free Energy F.
         """
+        # Sentinel: Ensure target_probs are valid (normalized)
+        # We do this check here to ensure JIT compatibility (inline)
+        prob_sum = target_probs.sum(dim=-1, keepdim=True)
+        # Use simple epsilon check
+        if not torch.allclose(prob_sum, torch.ones_like(prob_sum), atol=1e-3):
+             # In JIT, we might prefer functional operations over in-place if possible, but strictness matters
+             target_probs = target_probs / prob_sum
+
         # Project to logits (Action Space)
         logits = self.policy_head(hidden_states)
         q_log_probs = F.log_softmax(logits, dim=-1)
