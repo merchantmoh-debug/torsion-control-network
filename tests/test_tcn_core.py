@@ -90,13 +90,19 @@ class TestActiveInferenceController:
 
         F_val, metrics = controller.compute_free_energy(hidden_states, target_probs)
 
-        assert isinstance(F_val.item(), float)
+        # Bolt Update: Returns tensors now
+        assert isinstance(F_val, torch.Tensor)
         assert "KL" in metrics
         assert "H" in metrics
 
+        # Convert to float for assertion
+        f_item = metrics["F"].item()
+        kl_item = metrics["KL"].item()
+        h_item = metrics["H"].item()
+
         # Energy = KL - Beta * H. Check consistency.
-        expected_F = metrics["KL"] - controller.beta * metrics["H"]
-        assert math.isclose(metrics["F"], expected_F, rel_tol=1e-5)
+        expected_F = kl_item - controller.beta * h_item
+        assert math.isclose(f_item, expected_F, rel_tol=1e-5)
 
     def test_control_signal_gradient(self, controller, hidden_states):
         """Verify control signal (gradient) shape and existence."""
@@ -109,6 +115,23 @@ class TestActiveInferenceController:
 
         assert signal.shape == h.shape
         assert not torch.allclose(signal, torch.zeros_like(signal))
+
+    def test_optimization_step_fusion(self, controller, hidden_states):
+        """Verify fused optimization step matches separate calls."""
+        target_probs = torch.softmax(torch.randn(2, 5, 5), dim=-1)
+        h = hidden_states.clone().detach() # No grad yet
+
+        # 1. Fused path
+        signal_fused, f_fused, metrics_fused = controller.compute_optimization_step(h, target_probs)
+
+        # 2. Separate path (legacy behavior simulation)
+        h_sep = h.clone().detach().requires_grad_(True)
+        f_sep, _ = controller.compute_free_energy(h_sep, target_probs)
+        grads_sep = torch.autograd.grad(f_sep, h_sep, create_graph=False)[0]
+        signal_sep = -grads_sep
+
+        assert torch.allclose(signal_fused, signal_sep)
+        assert torch.allclose(f_fused, f_sep)
 
 class TestLyapunovStability:
     def test_stability_verification(self):
