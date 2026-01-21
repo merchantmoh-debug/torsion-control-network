@@ -41,18 +41,10 @@ class Sheaf:
     def compute_restriction_loss(self, s_i: Section, s_j: Section) -> float:
         """
         Computes the distance between two sections on their overlap.
-        For LLMs, this might be the KL Divergence or Euclidean distance
-        between outputs if they claim to represent the same truth.
+        Legacy method kept for single-pair debug.
         """
-        # Simplification: Assume data is in the same space and directly comparable
-        # In a real topological space, we would project to the intersection.
-        # Here we treat them as competing claims for the Global Truth.
-
-        # Ensure dimensions match
         if s_i.data.shape != s_j.data.shape:
-            # Simple padding or truncation could happen here, but for now assume strict shape
             return float('inf')
-
         dist = torch.norm(s_i.data - s_j.data).item()
         return dist
 
@@ -61,28 +53,42 @@ class Sheaf:
         Computes the Cech Cohomology check.
         Returns (is_consistent, max_inconsistency).
 
-        Is H^1 == 0?
+        Bolt Optimization:
+        - Vectorized pairwise distance calculation using torch.cdist or pdist.
+        - Avoids O(N^2) Python loops.
         """
         if len(self.sections) < 2:
             return True, 0.0 # Trivial consistency
 
-        max_inconsistency = 0.0
-        keys = list(self.sections.keys())
+        # 1. Stack all section data
+        # Check shapes first
+        sections_list = list(self.sections.values())
+        first_shape = sections_list[0].data.shape
 
-        # Check pairwise consistency (1-cocycles)
-        # delta(s)_{ij} = s_j - s_i on U_i intersect U_j
-        for i in range(len(keys)):
-            for j in range(i + 1, len(keys)):
-                id_i, id_j = keys[i], keys[j]
-                s_i = self.sections[id_i]
-                s_j = self.sections[id_j]
+        # Sentinel: Dimension Mismatch Check
+        for s in sections_list:
+            if s.data.shape != first_shape:
+                # Topologically invalid - sections must map to same fiber
+                return False, float('inf')
 
-                # We assume full overlap for "consensus" problems (all agents see the prompt)
-                loss = self.compute_restriction_loss(s_i, s_j)
+        # Stack: [N, ...]
+        try:
+            stacked = torch.stack([s.data for s in sections_list])
+        except Exception:
+            return False, float('inf')
 
-                if loss > self.tolerance:
-                    # Non-trivial 1-cocycle found
-                    max_inconsistency = max(max_inconsistency, loss)
+        # Flatten for distance computation: [N, D_flat]
+        N = stacked.size(0)
+        flat = stacked.view(N, -1)
+
+        # 2. Compute Pairwise Distances [N, N]
+        # p=2 (Euclidean Norm) matches torch.norm(a-b)
+        # cdist is efficient and JIT-friendly
+        dists = torch.cdist(flat, flat, p=2)
+
+        # 3. Find Max Divergence
+        # The matrix is symmetric with 0 diagonal.
+        max_inconsistency = dists.max().item()
 
         is_consistent = max_inconsistency <= self.tolerance
         return is_consistent, max_inconsistency
@@ -117,7 +123,6 @@ class CohomologyEngine:
             )
 
         # 3. Glue Global Section (Simple Average if consistent)
-        # Since H^1 ~ 0, s_i ~ s_j, so average is a valid approximation of the global section.
         stacked = torch.stack([s.data for s in self.sheaf.sections.values()])
         global_section = torch.mean(stacked, dim=0)
 
