@@ -164,13 +164,14 @@ except SovereignLockoutError as e:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown("#### System 4: Intel")
-    xi_micro = radar_info.get("xi_micro", 0.0)
-    st.metric("Correlation Length (ξ)", f"{xi_micro:.2f}")
+    st.markdown("#### System 4: Intelligence")
+    radar_val = SimulationProvider.get_radar_val()
+    st.metric("Future Horizon Stability", f"{radar_val:.2f}", delta=f"{radar_val - 0.5:.2f}", help="Predicted stability of the future latent trajectory based on current torsion.")
 
 with col2:
     st.markdown("#### System 3: Control")
-    st.metric("Free Energy (F)", f"{free_energy:.4f}")
+    control_signal = SimulationProvider.get_control_signal(torsion_strength)
+    st.metric("Control Gradient Norm", f"{abs(control_signal):.4f}", help="Magnitude of the corrective force applied to steer the trajectory.")
 
 with col3:
     st.markdown("#### System 5: Policy")
