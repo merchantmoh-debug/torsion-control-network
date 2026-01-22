@@ -9,7 +9,7 @@ Enforces the "Death Before Lie" protocol via the Sheaf-Theoretic Truth Layer.
 import torch
 import logging
 from typing import Dict, Any, Optional
-from src.tcn.math.sheaf import CohomologyEngine, ConstraintViolationError
+from tcn.math.sheaf import CohomologyEngine, ConstraintViolationError
 
 logger = logging.getLogger("ARK.Sentinel")
 

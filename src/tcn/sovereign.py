@@ -9,11 +9,11 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any
 
-from src.tcn.vsm.system_1_ops.ops import KineticOperator
-from src.tcn.vsm.system_2_coord.coord import Coordinator
-from src.tcn.vsm.system_3_control.control import MAOSKernel
-from src.tcn.vsm.system_4_intel.intel import FutureRadar
-from src.tcn.vsm.system_5_policy.policy import SoundHeart, SovereignLockoutError
+from tcn.vsm.system_1_ops.ops import KineticOperator
+from tcn.vsm.system_2_coord.coord import Coordinator
+from tcn.vsm.system_3_control.control import MAOSKernel
+from tcn.vsm.system_4_intel.intel import FutureRadar
+from tcn.vsm.system_5_policy.policy import SoundHeart, SovereignLockoutError
 
 class SovereignEntity(nn.Module):
     """
@@ -68,6 +68,10 @@ class SovereignEntity(nn.Module):
         control_packet = self.sys3_control.optimization_step(hidden_states, target_probs)
         raw_correction = control_packet['control_signal']
 
+        # Calculate Norm for dashboard telemetry (Bolt/Sentinel requirement)
+        # Use .item() cautiously, only for metrics
+        control_norm = torch.norm(raw_correction).item()
+
         # --- PHASE 4: COORDINATION (System 2) ---
         # Dampen the signal
         smooth_correction = self.sys2_coord.dampen(raw_correction)
@@ -85,6 +89,7 @@ class SovereignEntity(nn.Module):
             "metrics": {
                 "radar": radar_scan,
                 "control": control_packet['metrics'],
+                "control_norm": control_norm,
                 "stable": control_packet['is_stable']
             }
         }

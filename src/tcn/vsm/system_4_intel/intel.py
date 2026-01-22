@@ -7,7 +7,7 @@ Integrates Renormalization Group (RG) physics to predict "Complexity Cliffs"
 """
 
 import torch
-from src.tcn.math.physics import RenormalizationGroup
+from tcn.math.physics import RenormalizationGroup
 
 class FutureRadar:
     """
