@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import numpy as np
 import torch
 import time
+import html
 from tcn.sovereign import SovereignEntity, SovereignLockoutError
 
 # Palette Upgrade: Sovereign Styling
@@ -95,10 +96,12 @@ if st.sidebar.button("HARD RESET SYSTEM"):
 # --- Main Logic Loop ---
 
 if st.session_state.locked_out:
+    # Sentinel: Sanitize output to prevent XSS
+    safe_message = html.escape(st.session_state.lockout_message)
     st.markdown(f"""
     <div class="lockout-box">
         🔒 SOVEREIGN LOCKOUT ENGAGED<br>
-        {st.session_state.lockout_message}
+        {safe_message}
     </div>
     """, unsafe_allow_html=True)
     st.stop()
@@ -165,13 +168,21 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("#### System 4: Intelligence")
-    radar_val = SimulationProvider.get_radar_val()
-    st.metric("Future Horizon Stability", f"{radar_val:.2f}", delta=f"{radar_val - 0.5:.2f}", help="Predicted stability of the future latent trajectory based on current torsion.")
+    # ARK: Use real metrics from System 4
+    if result:
+        radar_val = radar_info.get("xi_macro", 0.0)
+        st.metric("Future Horizon Stability", f"{radar_val:.2f}", delta=f"{radar_val - 0.5:.2f}", help="Predicted stability of the future latent trajectory based on current torsion.")
+    else:
+        st.metric("Future Horizon Stability", "N/A")
 
 with col2:
     st.markdown("#### System 3: Control")
-    control_signal = SimulationProvider.get_control_signal(torsion_strength)
-    st.metric("Control Gradient Norm", f"{abs(control_signal):.4f}", help="Magnitude of the corrective force applied to steer the trajectory.")
+    # ARK: Use real metrics from System 3
+    if result:
+        control_norm = metrics.get("control_norm", 0.0)
+        st.metric("Control Gradient Norm", f"{control_norm:.4f}", help="Magnitude of the corrective force applied to steer the trajectory.")
+    else:
+        st.metric("Control Gradient Norm", "N/A")
 
 with col3:
     st.markdown("#### System 5: Policy")
