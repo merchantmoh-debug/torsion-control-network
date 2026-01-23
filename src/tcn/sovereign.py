@@ -47,6 +47,12 @@ class SovereignEntity(nn.Module):
             Updated hidden state and system metrics.
         """
 
+        # Sentinel: Structural Integrity Check
+        if torch.isnan(hidden_states).any() or torch.isinf(hidden_states).any():
+             raise SovereignLockoutError("Sentinel Lockout: Latent State Corruption Detected (NaN/Inf).")
+        if target_probs is not None and torch.isnan(target_probs).any():
+             raise SovereignLockoutError("Sentinel Lockout: Target Probabilities Corruption Detected.")
+
         # --- PHASE 1: INTELLIGENCE SCAN (System 4) ---
         # Scan for future collapse
         radar_scan = self.sys4_intel.scan_horizon(hidden_states)

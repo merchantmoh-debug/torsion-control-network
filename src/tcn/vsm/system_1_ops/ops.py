@@ -23,10 +23,14 @@ class KineticOperator(nn.Module):
         self.manifold = RiemannianManifold(dim=hidden_dim)
         self.torsion = TorsionTensor(hidden_dim=hidden_dim, rank=rank)
 
-    def compute_metric(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def compute_metric(self, hidden_states: torch.Tensor, implicit: bool = False):
         """
         Calculates the local metric tensor G_ij.
+
+        Bolt Optimization: Supports implicit metric calculation to avoid O(D^2) memory usage.
         """
+        if implicit:
+            return self.manifold.compute_implicit_metric(hidden_states)
         return self.manifold.compute_metric_tensor(hidden_states)
 
     @torch.compile # Bolt: Optimize this hot path
