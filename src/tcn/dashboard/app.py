@@ -200,14 +200,25 @@ if result is not None:
 else:
     projected = np.zeros((10, 3))
 
-fig = go.Figure(data=[go.Scatter3d(
-    x=projected[:, 0],
-    y=projected[:, 1],
-    z=projected[:, 2],
-    mode='lines+markers',
-    marker=dict(size=5, color=np.arange(10), colorscale='Viridis'),
-    line=dict(color='#00ff00', width=4)
-)])
+fig = go.Figure(data=[
+    # Trajectory Trace
+    go.Scatter3d(
+        x=projected[:, 0],
+        y=projected[:, 1],
+        z=projected[:, 2],
+        mode='lines+markers',
+        marker=dict(size=5, color=np.arange(10), colorscale='Plasma', showscale=True),
+        line=dict(color='#00ff00', width=4),
+        name='Trajectory'
+    ),
+    # Attractor Trace (The Target)
+    go.Scatter3d(
+        x=[0], y=[0], z=[0],
+        mode='markers',
+        marker=dict(size=10, color='lime', symbol='diamond'),
+        name='Target Attractor'
+    )
+])
 
 fig.update_layout(
     template="plotly_dark",

@@ -13,6 +13,13 @@ import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 from collections import defaultdict
 
+# Bolt Optimization: JIT Compilation
+try:
+    from torch import compile as torch_compile
+except ImportError:
+    def torch_compile(func):
+        return func
+
 class ConstraintViolationError(Exception):
     pass
 
@@ -48,6 +55,7 @@ class Sheaf:
         dist = torch.norm(s_i.data - s_j.data).item()
         return dist
 
+    @torch_compile
     def compute_cohomology(self) -> Tuple[bool, float]:
         """
         Computes the Cech Cohomology check.

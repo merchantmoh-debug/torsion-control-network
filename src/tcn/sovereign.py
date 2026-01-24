@@ -90,6 +90,11 @@ class SovereignEntity(nn.Module):
         # x_new = x_twisted + correction
         final_state = twisted_state + smooth_correction
 
+        # Sentinel: Final Integrity Verification
+        # Ensure the mathematical operations didn't explode into NaNs/Infs
+        if torch.isnan(final_state).any() or torch.isinf(final_state).any():
+             raise SovereignLockoutError("Sentinel Lockout: Trajectory Collapse (NaN/Inf in Final State).")
+
         return {
             "state": final_state,
             "metrics": {
