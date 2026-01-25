@@ -82,7 +82,7 @@ class Sheaf:
         # Stack: [N, ...]
         try:
             stacked = torch.stack([s.data for s in sections_list])
-        except Exception:
+        except RuntimeError:
             return False, float('inf')
 
         # Flatten for distance computation: [N, D_flat]

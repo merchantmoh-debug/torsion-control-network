@@ -1,6 +1,6 @@
 import torch
 import pytest
-from src.tcn.constraints import GeometricConstraints, StabilityContract, ConstraintViolationError
+from tcn.constraints import GeometricConstraints, StabilityContract, ConstraintViolationError
 
 class TestGeometricConstraints:
     def test_verify_positive_definite_success(self):

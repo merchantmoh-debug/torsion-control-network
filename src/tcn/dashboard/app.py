@@ -65,10 +65,11 @@ if "sovereign" not in st.session_state:
 
 # Sidebar Controls
 st.sidebar.header("🕹️ Command Deck")
+st.sidebar.success("System Status: ONLINE")
 
 # Sentinel Input Validation
-torsion_strength = st.sidebar.slider("Torsion Strength (Alpha)", 0.0, 1.0, 0.1, help="Curvature Magnitude")
-entropy_beta = st.sidebar.slider("Entropy Beta (Explore)", 0.0, 1.0, 0.1, help="Exploration weight")
+torsion_strength = st.sidebar.slider("Torsion Strength (Alpha)", 0.0, 1.0, 0.1, help="Controls the curvature intensity of the narrative arc.")
+entropy_beta = st.sidebar.slider("Entropy Beta (Explore)", 0.0, 1.0, 0.1, help="Balances between exploitation (coherence) and exploration (creativity).")
 
 # Update Entity Params
 st.session_state.sovereign.sys1_ops.torsion.alpha = torsion_strength
@@ -180,6 +181,9 @@ with col2:
     # ARK: Use real metrics from System 3
     if result:
         control_norm = metrics.get("control_norm", 0.0)
+        # Bolt Optimization: Handle tensor metric from sovereign (avoided graph break there)
+        if isinstance(control_norm, torch.Tensor):
+            control_norm = control_norm.item()
         st.metric("Control Gradient Norm", f"{control_norm:.4f}", help="Magnitude of the corrective force applied to steer the trajectory.")
     else:
         st.metric("Control Gradient Norm", "N/A")

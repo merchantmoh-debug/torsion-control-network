@@ -48,8 +48,9 @@ class SovereignEntity(nn.Module):
         """
 
         # Sentinel: Structural Integrity Check
-        if torch.isnan(hidden_states).any() or torch.isinf(hidden_states).any():
-             raise SovereignLockoutError("Sentinel Lockout: Latent State Corruption Detected (NaN/Inf).")
+        # Delegated to System 5 Policy for centralized enforcement
+        self.sys5_policy.enforce_prime_directive(hidden_states)
+
         if target_probs is not None and torch.isnan(target_probs).any():
              raise SovereignLockoutError("Sentinel Lockout: Target Probabilities Corruption Detected.")
 
@@ -75,8 +76,8 @@ class SovereignEntity(nn.Module):
         raw_correction = control_packet['control_signal']
 
         # Calculate Norm for dashboard telemetry (Bolt/Sentinel requirement)
-        # Use .item() cautiously, only for metrics
-        control_norm = torch.norm(raw_correction).item()
+        # ARK Optimization: Return tensor to avoid graph break. Caller must sync if needed.
+        control_norm = torch.norm(raw_correction)
 
         # --- PHASE 4: COORDINATION (System 2) ---
         # Dampen the signal
