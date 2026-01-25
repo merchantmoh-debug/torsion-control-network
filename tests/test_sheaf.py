@@ -2,7 +2,7 @@
 import torch
 import pytest
 import time
-from src.tcn.math.sheaf import CohomologyEngine, Sheaf, Section, ConstraintViolationError
+from tcn.math.sheaf import CohomologyEngine, Sheaf, Section, ConstraintViolationError
 
 def test_sheaf_consistency():
     """Test that sheaf correctly identifies consistent sections."""

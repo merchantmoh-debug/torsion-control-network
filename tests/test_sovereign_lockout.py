@@ -1,6 +1,6 @@
 import torch
 import pytest
-from src.tcn.sovereign import SovereignEntity, SovereignLockoutError
+from tcn.sovereign import SovereignEntity, SovereignLockoutError
 
 def test_death_before_lie_lockout():
     """
