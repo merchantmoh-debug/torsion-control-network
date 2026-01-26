@@ -117,6 +117,13 @@ class CohomologyEngine:
             The global section (consensus) if H^1 == 0.
             Raises ConstraintViolationError if H^1 != 0.
         """
+        # Sentinel: Input Validation
+        for agent_id, data in proposals.items():
+            if torch.isnan(data).any():
+                raise ConstraintViolationError(f"Corruption Detected: NaNs in signal from {agent_id}")
+            if torch.isinf(data).any():
+                raise ConstraintViolationError(f"Corruption Detected: Infs in signal from {agent_id}")
+
         # 1. Build Sheaf
         self.sheaf = Sheaf(tolerance=self.sheaf.tolerance) # Reset
         for agent_id, data in proposals.items():
