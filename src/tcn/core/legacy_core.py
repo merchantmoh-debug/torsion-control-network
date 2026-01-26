@@ -281,21 +281,24 @@ class ActiveInferenceController(nn.Module):
     @torch_compile
     def compute_free_energy(self,
                           hidden_states: torch.Tensor,
-                          target_probs: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Any]]:
+                          target_probs: torch.Tensor,
+                          validate: bool = True) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         Calculates Variational Free Energy F.
 
         Bolt Optimization:
         - Avoids .item() calls to prevent GPU synchronization.
         - Returns tensors in metrics.
+        - 'validate' flag allows skipping redundant normalization checks in hot loops.
         """
-        # Sentinel: Ensure target_probs are valid (normalized)
-        # We do this check here to ensure JIT compatibility (inline)
-        prob_sum = target_probs.sum(dim=-1, keepdim=True)
-        # Use simple epsilon check
-        if not torch.allclose(prob_sum, torch.ones_like(prob_sum), atol=1e-3):
-             # In JIT, we might prefer functional operations over in-place if possible, but strictness matters
-             target_probs = target_probs / prob_sum
+        if validate:
+            # Sentinel: Ensure target_probs are valid (normalized)
+            # We do this check here to ensure JIT compatibility (inline)
+            prob_sum = target_probs.sum(dim=-1, keepdim=True)
+            # Use simple epsilon check
+            if not torch.allclose(prob_sum, torch.ones_like(prob_sum), atol=1e-3):
+                # In JIT, we might prefer functional operations over in-place if possible, but strictness matters
+                target_probs = target_probs / prob_sum
 
         # Project to logits (Action Space)
         logits = self.policy_head(hidden_states)
@@ -350,7 +353,8 @@ class ActiveInferenceController(nn.Module):
         h_curr = hidden_states.detach().requires_grad_(True)
 
         # Single Forward Pass
-        free_energy, metrics = self.compute_free_energy(h_curr, target_probs)
+        # Bolt: validation already done in validate_inputs above, skip it here.
+        free_energy, metrics = self.compute_free_energy(h_curr, target_probs, validate=False)
 
         # Compute Gradient Flow: dF/dh
         try:
