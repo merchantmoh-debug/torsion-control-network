@@ -47,12 +47,17 @@ class SovereignEntity(nn.Module):
             Updated hidden state and system metrics.
         """
 
-        # Sentinel: Structural Integrity Check
-        # Delegated to System 5 Policy for centralized enforcement
-        self.sys5_policy.enforce_prime_directive(hidden_states)
+        # Sentinel: Structural Integrity Check (Bolt Optimized)
+        # We calculate integrity scores as tensors to maintain JIT graph compilation.
+        integrity_in = self.sys5_policy.check_structural_integrity(hidden_states)
 
-        if target_probs is not None and torch.isnan(target_probs).any():
-             raise SovereignLockoutError("Sentinel Lockout: Target Probabilities Corruption Detected.")
+        integrity_target = torch.tensor(1.0, device=hidden_states.device)
+        if target_probs is not None:
+            # Simple NaN check for target_probs
+            target_valid = ~torch.isnan(target_probs).any()
+            integrity_target = torch.where(target_valid,
+                                         torch.tensor(1.0, device=hidden_states.device),
+                                         torch.tensor(0.0, device=hidden_states.device))
 
         # --- PHASE 1: INTELLIGENCE SCAN (System 4) ---
         # Scan for future collapse
@@ -92,9 +97,11 @@ class SovereignEntity(nn.Module):
         final_state = twisted_state + smooth_correction
 
         # Sentinel: Final Integrity Verification
-        # Ensure the mathematical operations didn't explode into NaNs/Infs
-        if torch.isnan(final_state).any() or torch.isinf(final_state).any():
-             raise SovereignLockoutError("Sentinel Lockout: Trajectory Collapse (NaN/Inf in Final State).")
+        integrity_out = self.sys5_policy.check_structural_integrity(final_state)
+
+        # Aggregate Integrity (Logical AND via min or product)
+        # If any score is 0.0, the result is 0.0
+        system_integrity = torch.min(torch.stack([integrity_in, integrity_target, integrity_out]))
 
         return {
             "state": final_state,
@@ -102,6 +109,7 @@ class SovereignEntity(nn.Module):
                 "radar": radar_scan,
                 "control": control_packet['metrics'],
                 "control_norm": control_norm,
-                "stable": control_packet['is_stable']
+                "stable": control_packet['is_stable'],
+                "integrity": system_integrity # Bolt: Passed to outer loop for handling
             }
         }

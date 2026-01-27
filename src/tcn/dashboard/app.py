@@ -16,38 +16,41 @@ st.set_page_config(
 )
 
 # Custom CSS for Sovereign Aesthetic
-st.markdown("""
-<style>
-    .stApp {
-        background-color: #000000;
-        color: #00ff00;
-        font-family: 'JetBrains Mono', monospace;
-    }
-    .stMetric {
-        background-color: #111111;
-        padding: 10px;
-        border: 1px solid #333333;
-    }
-    h1, h2, h3, h4, p, div, span {
-        font-family: 'JetBrains Mono', monospace !important;
-    }
-    .lockout-box {
-        background-color: #550000;
-        color: #ffffff;
-        padding: 20px;
-        border: 2px solid #ff0000;
-        text-align: center;
-        font-size: 24px;
-        font-weight: bold;
-        animation: blink 1s infinite;
-    }
-    @keyframes blink {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
-</style>
-""", unsafe_allow_html=True)
+sovereign_mode = st.sidebar.checkbox("Sovereign Mode", value=True, help="Toggle the high-contrast Sovereign aesthetic.")
+
+if sovereign_mode:
+    st.markdown("""
+    <style>
+        .stApp {
+            background-color: #000000;
+            color: #00ff00;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .stMetric {
+            background-color: #111111;
+            padding: 10px;
+            border: 1px solid #333333;
+        }
+        h1, h2, h3, h4, p, div, span {
+            font-family: 'JetBrains Mono', monospace !important;
+        }
+        .lockout-box {
+            background-color: #550000;
+            color: #ffffff;
+            padding: 20px;
+            border: 2px solid #ff0000;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 st.title("⚡ ARK Torsion Control Network")
 st.markdown("### Sovereign Entity Status: ONLINE | v64.0")
@@ -144,6 +147,11 @@ try:
             target_probs=target_probs,
             external_proposals=proposals
         )
+
+        # Sentinel: Check Integrity Flag from JIT Loop
+        # We handle the lockout exception here, allowing the inner loop to remain pure math.
+        if result["metrics"].get("integrity", 1.0) < 0.5:
+             raise SovereignLockoutError("Sentinel Lockout: Trajectory Collapse Detected (Integrity Metric < 0.5).")
 
         # Extract Metrics
         metrics = result["metrics"]
