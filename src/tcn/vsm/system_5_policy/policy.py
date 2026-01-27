@@ -56,21 +56,42 @@ class SoundHeart:
                 f"Details: {str(e)}"
             )
 
-    def enforce_prime_directive(self, latent_state: torch.Tensor) -> bool:
+    def check_structural_integrity(self, latent_state: torch.Tensor) -> torch.Tensor:
         """
-        Sentinel Hardening: Structural Integrity Check.
-        Verifies that the latent state is well-formed (no NaNs, Infs) and
-        bounded, preventing "Mode Collapse" or numerical instability.
+        Bolt Optimization: Tensor-only Integrity Check.
+        Returns a scalar tensor: 1.0 (Valid) or 0.0 (Corrupt).
+        This avoids Python control flow (graph breaks) for JIT compilation.
         """
-        # 1. Check for NaNs/Infs
-        if torch.isnan(latent_state).any() or torch.isinf(latent_state).any():
-             logger.critical("SENTINEL: Latent State Corruption Detected (NaN/Inf).")
-             raise SovereignLockoutError("Structural Integrity Failure: Latent State contains NaNs or Infs.")
+        # 1. Check for NaNs/Infs (Boolean Tensors)
+        has_nans = torch.isnan(latent_state).any()
+        has_infs = torch.isinf(latent_state).any()
 
         # 2. Check for Explosive Norms (Instability)
         norm = torch.norm(latent_state, dim=-1).mean()
-        if norm > 1e4: # Arbitrary high threshold for stability
-             logger.critical(f"SENTINEL: Latent State Unstable. Norm: {norm:.2f}")
-             raise SovereignLockoutError(f"Structural Integrity Failure: Latent Norm Exploded ({norm:.2f}).")
+        is_unstable = norm > 1e4
+
+        # 3. Combine Flags
+        is_corrupt = has_nans | has_infs | is_unstable
+
+        # Return 1.0 if valid, 0.0 if corrupt
+        return torch.where(is_corrupt, torch.tensor(0.0, device=latent_state.device), torch.tensor(1.0, device=latent_state.device))
+
+    def enforce_prime_directive(self, latent_state: torch.Tensor) -> bool:
+        """
+        Sentinel Hardening: Structural Integrity Check (Legacy/Eager Mode).
+        Verifies that the latent state is well-formed (no NaNs, Infs) and
+        bounded, preventing "Mode Collapse" or numerical instability.
+        """
+        integrity_score = self.check_structural_integrity(latent_state)
+
+        if integrity_score < 0.5:
+             # Diagnose specific failure for logging (expensive, do only on failure)
+             if torch.isnan(latent_state).any() or torch.isinf(latent_state).any():
+                 logger.critical("SENTINEL: Latent State Corruption Detected (NaN/Inf).")
+                 raise SovereignLockoutError("Structural Integrity Failure: Latent State contains NaNs or Infs.")
+             else:
+                 norm = torch.norm(latent_state, dim=-1).mean()
+                 logger.critical(f"SENTINEL: Latent State Unstable. Norm: {norm:.2f}")
+                 raise SovereignLockoutError(f"Structural Integrity Failure: Latent Norm Exploded ({norm:.2f}).")
 
         return True
