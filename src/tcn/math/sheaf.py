@@ -101,6 +101,35 @@ class Sheaf:
         is_consistent = max_inconsistency <= self.tolerance
         return is_consistent, max_inconsistency
 
+    @staticmethod
+    def compute_cohomology_tensor(stacked_proposals: torch.Tensor, tolerance: float = 1e-3) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Computes Cohomology on a pre-stacked tensor [N, ...].
+        Returns (is_consistent (0.0/1.0), max_inconsistency).
+        JIT-friendly: No object creation, no loops.
+        """
+        if stacked_proposals.size(0) < 2:
+             return torch.tensor(1.0, device=stacked_proposals.device), torch.tensor(0.0, device=stacked_proposals.device)
+
+        # Flatten for distance computation: [N, D_flat]
+        N = stacked_proposals.size(0)
+        flat = stacked_proposals.view(N, -1)
+
+        # Pairwise Distances [N, N]
+        dists = torch.cdist(flat, flat, p=2)
+
+        # Max Divergence
+        max_inconsistency = dists.max()
+
+        # Consistency Check
+        is_consistent = torch.where(
+            max_inconsistency <= tolerance,
+            torch.tensor(1.0, device=stacked_proposals.device),
+            torch.tensor(0.0, device=stacked_proposals.device)
+        )
+
+        return is_consistent, max_inconsistency
+
 class CohomologyEngine:
     """
     High-level interface for Truth Fusion.

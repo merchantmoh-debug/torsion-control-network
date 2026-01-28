@@ -26,7 +26,7 @@ class FutureRadar:
             trajectory: [Batch, Seq, Dim] - The recent history of states.
 
         Returns:
-            Status report (Safe/Critical/Collapse)
+            Status report (Safe/Critical/Collapse) with tensor flags.
         """
         # 1. Base Correlation (Micro-scale)
         corr_micro = self.rg.calculate_correlation_length(trajectory)
@@ -37,17 +37,25 @@ class FutureRadar:
         corr_macro = self.rg.calculate_correlation_length(traj_macro)
 
         # 3. Assessment
-        # If Micro is chaotic but Macro is ordered -> Just noise (Safe)
-        # If Macro is chaotic -> Structural failure (Complexity Cliff)
+        # 0 = SAFE, 1 = NOISY, 2 = COLLAPSE_IMMINENT
 
-        status = "SAFE"
-        if corr_macro < self.threshold:
-            status = "COLLAPSE_IMMINENT"
-        elif corr_micro < self.threshold:
-            status = "NOISY"
+        # Default Safe
+        status_code = torch.tensor(0.0, device=trajectory.device)
+
+        # Check thresholds (using tensor boolean logic)
+        is_collapse = corr_macro < self.threshold
+        is_noisy = corr_micro < self.threshold
+
+        # If collapse -> 2
+        # Else if noisy -> 1
+        # Else -> 0
+
+        # Note: torch.where(condition, x, y)
+        status_code = torch.where(is_noisy, torch.tensor(1.0, device=trajectory.device), status_code)
+        status_code = torch.where(is_collapse, torch.tensor(2.0, device=trajectory.device), status_code)
 
         return {
-            "status": status,
+            "status": status_code, # 0.0, 1.0, 2.0
             "xi_micro": corr_micro,
             "xi_macro": corr_macro
         }

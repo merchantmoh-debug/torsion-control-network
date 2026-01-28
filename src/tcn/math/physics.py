@@ -61,7 +61,7 @@ class RenormalizationGroup:
         return current_state
 
     @staticmethod
-    def calculate_correlation_length(trajectory: torch.Tensor) -> float:
+    def calculate_correlation_length(trajectory: torch.Tensor) -> torch.Tensor:
         """
         Estimates the correlation length (xi) of the system.
         If xi < window_size, the system is in a Disordered Phase (Noise).
@@ -70,11 +70,11 @@ class RenormalizationGroup:
         # Simple autocorrelation at lag 1 proxy
         # traj: [B, S, D]
         if trajectory.size(1) < 2:
-            return 0.0
+            return torch.tensor(0.0, device=trajectory.device)
 
         t0 = trajectory[:, :-1, :]
         t1 = trajectory[:, 1:, :]
 
         # Cosine similarity as correlation
         sim = F.cosine_similarity(t0, t1, dim=-1)
-        return sim.mean().item()
+        return sim.mean()

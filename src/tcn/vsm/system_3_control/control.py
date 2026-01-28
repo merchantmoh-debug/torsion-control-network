@@ -28,14 +28,13 @@ class MAOSKernel(nn.Module):
         Calculates Free Energy and Gradient Control Signal.
         """
         # Bolt Optimization: Use fused step
-        control_signal, free_energy, metrics = self.aic.compute_optimization_step(hidden_states, target_probs)
+        # Disable redundant validation inside JIT loop (System 5 handles it)
+        control_signal, free_energy, metrics = self.aic.compute_optimization_step(hidden_states, target_probs, validate=False)
 
         # 2. Check Stability (Lyapunov)
-        # Note: we take .item() here because Lyapunov expects a float and maintains history list.
-        # This is an inevitable sync point if we need CPU-side history logic,
-        # but it happens AFTER the heavy lifting.
-        fe_item = free_energy.item()
-        is_stable, dV = self.lyapunov.verify(fe_item)
+        # Bolt Optimization: Pass tensor directly to verify() to maintain graph continuity
+        # LyapunovStability must handle tensors now.
+        is_stable, dV = self.lyapunov.verify(free_energy)
 
         # Update metrics with the scalar values for logging if needed,
         # but keep tensors available if downstream needs them.

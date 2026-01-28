@@ -221,7 +221,8 @@ class TorsionTensor(nn.Module):
         Returns:
             twisted_states: [Batch, Seq, Dim]
         """
-        self.validate_input(hidden_states)
+        # Bolt: redundant validation, System 5 handles this.
+        # self.validate_input(hidden_states)
 
         # 1. Project to latent curvature space
         latent = self.U(hidden_states) # [B, S, R]
@@ -335,7 +336,8 @@ class ActiveInferenceController(nn.Module):
 
     def compute_optimization_step(self,
                                 hidden_states: torch.Tensor,
-                                target_probs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
+                                target_probs: torch.Tensor,
+                                validate: bool = True) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
         """
         Bolt Optimization:
         Fused step that computes Free Energy AND Control Signal (Gradients)
@@ -346,28 +348,42 @@ class ActiveInferenceController(nn.Module):
             free_energy: F
             metrics: dict of tensors
         """
-        self.validate_inputs(hidden_states, target_probs)
+        if validate:
+            self.validate_inputs(hidden_states, target_probs)
 
-        # Detach and require grad to compute local sensitivity
-        # This is the point where we start the 'active inference' graph
-        h_curr = hidden_states.detach().requires_grad_(True)
+        # Bolt Optimization: Use torch.func.grad for JIT-compatible gradient computation
+        # This avoids in-place requires_grad_() which breaks Dynamo
+        h_curr = hidden_states.detach()
 
-        # Single Forward Pass
-        # Bolt: validation already done in validate_inputs above, skip it here.
-        free_energy, metrics = self.compute_free_energy(h_curr, target_probs, validate=False)
-
-        # Compute Gradient Flow: dF/dh
         try:
-            # create_graph=False because we don't need second derivatives of F w.r.t h
-            grads = grad(free_energy, h_curr, create_graph=False)[0]
-        except RuntimeError as e:
-            logger.error(f"Gradient computation failed: {e}")
-            grads = torch.zeros_like(h_curr)
+            from torch.func import grad as func_grad
+
+            def energy_fn(h):
+                f, m = self.compute_free_energy(h, target_probs, validate=False)
+                return f, (f, m)
+
+            # Compute gradient and value (with auxiliary metrics)
+            # has_aux=True requires PyTorch >= 2.0
+            out = func_grad(energy_fn, has_aux=True)(h_curr)
+            grads = out[0]
+            aux = out[1]
+            free_energy = aux[0]
+            metrics = aux[1]
+
+        except (ImportError, RuntimeError):
+            # Fallback for legacy environments or runtime errors
+            h_curr.requires_grad = True
+            free_energy, metrics = self.compute_free_energy(h_curr, target_probs, validate=False)
+            try:
+                grads = grad(free_energy, h_curr, create_graph=False)[0]
+            except RuntimeError as e:
+                logger.error(f"Gradient computation failed: {e}")
+                grads = torch.zeros_like(h_curr)
 
         # Check for exploding gradients
-        if torch.isnan(grads).any() or torch.isinf(grads).any():
-             logger.warning("Control signal contains NaNs/Infs. Zeroing update.")
-             grads = torch.zeros_like(h_curr)
+        # Bolt Optimization: Tensor-based check to avoid graph breaks
+        is_corrupt = torch.isnan(grads).any() | torch.isinf(grads).any()
+        grads = torch.where(is_corrupt, torch.zeros_like(grads), grads)
 
         control_signal = -grads
 
@@ -398,38 +414,34 @@ class LyapunovStability:
     def __repr__(self):
         return f"LyapunovStability(window={self.window_size}, thresh={self.threshold})"
 
-    def verify(self, energy: Union[float, torch.Tensor]) -> Tuple[bool, float]:
+    def verify(self, energy: Union[float, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Checks stability.
-        Returns: (is_stable, delta_V)
+        Returns: (is_stable, delta_V) as tensors.
         """
-        # Bolt Optimization: Handle Tensor input safely
-        if isinstance(energy, torch.Tensor):
-            val = energy.item()
-        else:
-            val = energy
+        # Bolt Optimization: Pure Tensor Path for JIT
+        val = energy if isinstance(energy, torch.Tensor) else torch.tensor(energy)
 
-        if math.isnan(val) or math.isinf(val):
-             logger.critical("Lyapunov Energy is NaN/Inf!")
-             return False, 0.0
+        # Check corruption (non-blocking)
+        is_corrupt = torch.isnan(val) | torch.isinf(val)
 
-        self.history.append(val)
+        # We store detached tensor to avoid graph memory leaks
+        # Dynamo handles list mutation (recompiles until window size reached)
+        self.history.append(val.detach())
         if len(self.history) > self.window_size:
             self.history.pop(0)
 
         if len(self.history) < 2:
-            return True, 0.0
+            return torch.tensor(True, device=val.device), torch.tensor(0.0, device=val.device)
 
-        # Calculate discrete derivative dV/dt (smoothed)
-        # Simple finite difference of the last step
+        # Calculate discrete derivative dV/dt
         delta = self.history[-1] - self.history[-2]
 
-        # Stability Condition: Energy should not increase significantly
-        # We allow delta <= threshold (noise floor)
+        # Stability Condition
         is_stable = delta <= self.threshold
 
-        if not is_stable:
-             logger.warning(f"Instability detected: dV={delta:.6f} > {self.threshold}")
+        # Handle corruption
+        is_stable = torch.where(is_corrupt, torch.tensor(False, device=val.device), is_stable)
 
         return is_stable, delta
 

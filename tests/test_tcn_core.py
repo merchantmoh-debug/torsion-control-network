@@ -142,14 +142,14 @@ class TestLyapunovStability:
         # 1.0 -> 0.9 (delta = -0.1 <= 0.1) -> Stable
         monitor.verify(1.0)
         is_stable, delta = monitor.verify(0.9)
-        assert is_stable
-        assert math.isclose(delta, -0.1)
+        assert is_stable.item()
+        assert math.isclose(delta.item(), -0.1, abs_tol=1e-5)
 
         # Case 2: Unstable increase
         # 0.9 -> 1.5 (delta = 0.6 > 0.1) -> Unstable
         is_stable, delta = monitor.verify(1.5)
-        assert not is_stable
-        assert math.isclose(delta, 0.6)
+        assert not is_stable.item()
+        assert math.isclose(delta.item(), 0.6, abs_tol=1e-5)
 
     def test_window_management(self):
         """Verify history window is maintained."""
@@ -158,4 +158,6 @@ class TestLyapunovStability:
             monitor.verify(float(i))
 
         assert len(monitor.history) == 3
-        assert monitor.history == [7.0, 8.0, 9.0]
+        # History contains tensors now
+        hist_floats = [x.item() for x in monitor.history]
+        assert hist_floats == [7.0, 8.0, 9.0]
