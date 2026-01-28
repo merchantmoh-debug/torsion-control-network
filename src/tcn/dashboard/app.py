@@ -150,11 +150,13 @@ try:
 
         # Sentinel: Check Integrity Flag from JIT Loop
         # We handle the lockout exception here, allowing the inner loop to remain pure math.
-        if result["metrics"].get("integrity", 1.0) < 0.5:
+        metrics = result["metrics"]
+        integrity_val = metrics.get("integrity", torch.tensor(1.0)).item()
+
+        if integrity_val < 0.5:
              raise SovereignLockoutError("Sentinel Lockout: Trajectory Collapse Detected (Integrity Metric < 0.5).")
 
         # Extract Metrics
-        metrics = result["metrics"]
         control_info = metrics["control"]
         radar_info = metrics["radar"]
 
@@ -179,8 +181,11 @@ with col1:
     st.markdown("#### System 4: Intelligence")
     # ARK: Use real metrics from System 4
     if result:
-        radar_val = radar_info.get("xi_macro", 0.0)
-        st.metric("Future Horizon Stability", f"{radar_val:.2f}", delta=f"{radar_val - 0.5:.2f}", help="Predicted stability of the future latent trajectory based on current torsion.")
+        radar_val = radar_info.get("xi_macro", torch.tensor(0.0)).item()
+        status_code = int(radar_info.get("status", torch.tensor(0.0)).item())
+        status_str = {0: "SAFE", 1: "NOISY", 2: "COLLAPSE"}.get(status_code, "UNKNOWN")
+
+        st.metric(f"Future Horizon ({status_str})", f"{radar_val:.2f}", delta=f"{radar_val - 0.5:.2f}", help="Predicted stability of the future latent trajectory based on current torsion.")
     else:
         st.metric("Future Horizon Stability", "N/A")
 

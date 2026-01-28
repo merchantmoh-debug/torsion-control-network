@@ -62,18 +62,21 @@ class SovereignEntity(nn.Module):
         # --- PHASE 1: INTELLIGENCE SCAN (System 4) ---
         # Scan for future collapse
         radar_scan = self.sys4_intel.scan_horizon(hidden_states)
-        if radar_scan['status'] == 'COLLAPSE_IMMINENT':
-            # In a full system, this would trigger a mode shift (e.g., to "Fortress Mode")
-            pass
+        # radar_scan['status'] is now a tensor (0, 1, 2)
+        # We allow flow to continue; mode logic is handled by tensor flags or outside
 
         # --- PHASE 2: TRUTH ARBITRATION (System 5) ---
         # If we have multiple inputs (or self-reflection), verify Cohomology
-        if external_proposals:
-            try:
-                # This throws SovereignLockoutError if H^1 != 0
-                _ = self.sys5_policy.arbitrate(external_proposals)
-            except SovereignLockoutError:
-                raise # Propagate up to stop generation
+        integrity_truth = torch.tensor(1.0, device=hidden_states.device)
+
+        if external_proposals is not None and len(external_proposals) > 0:
+            # Stack proposals
+            # Bolt: Iterating dict keys is consistent in JIT if keys don't change
+            proposals_list = list(external_proposals.values())
+            stacked = torch.stack(proposals_list)
+
+            # Arbitrate Tensor (No Exceptions)
+            _, integrity_truth = self.sys5_policy.arbitrate_tensor(stacked)
 
         # --- PHASE 3: OPTIMIZATION (System 3) ---
         # Calculate Free Energy gradients
@@ -101,7 +104,7 @@ class SovereignEntity(nn.Module):
 
         # Aggregate Integrity (Logical AND via min or product)
         # If any score is 0.0, the result is 0.0
-        system_integrity = torch.min(torch.stack([integrity_in, integrity_target, integrity_out]))
+        system_integrity = torch.min(torch.stack([integrity_in, integrity_target, integrity_truth, integrity_out]))
 
         return {
             "state": final_state,

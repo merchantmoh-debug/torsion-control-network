@@ -46,12 +46,13 @@ def test_death_before_lie_lockout():
         "Agent_Omega": proposal_lie
     }
 
-    with pytest.raises(SovereignLockoutError) as excinfo:
-        entity.generate_step(hidden_state, target_probs, external_proposals=invalid_inputs)
+    # Bolt Update: SovereignEntity now returns integrity flag instead of raising exception for JIT speed.
+    # The Dashboard/Application layer is responsible for raising the error.
+    result = entity.generate_step(hidden_state, target_probs, external_proposals=invalid_inputs)
 
-    print(f"\n[PASS] Lockout Triggered: {str(excinfo.value)}")
-    assert "Truth Topology Broken" in str(excinfo.value)
-    assert "ZERO-CAPITULATION" in str(excinfo.value)
+    integrity = result['metrics']['integrity'].item()
+    print(f"\n[PASS] Lockout Triggered via Metric: {integrity}")
+    assert integrity == 0.0
 
 if __name__ == "__main__":
     test_death_before_lie_lockout()

@@ -8,8 +8,8 @@ Enforces the "Death Before Lie" protocol via the Sheaf-Theoretic Truth Layer.
 
 import torch
 import logging
-from typing import Dict, Any, Optional
-from tcn.math.sheaf import CohomologyEngine, ConstraintViolationError
+from typing import Dict, Any, Optional, Tuple
+from tcn.math.sheaf import CohomologyEngine, ConstraintViolationError, Sheaf
 
 logger = logging.getLogger("ARK.Sentinel")
 
@@ -55,6 +55,44 @@ class SoundHeart:
                 f"Protocol: ZERO-CAPITULATION. "
                 f"Details: {str(e)}"
             )
+
+    def arbitrate_tensor(self, proposals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Bolt/Sentinel JIT-Safe Arbitration.
+
+        Args:
+            proposals: [N, Batch, Seq, Dim] - Stacked candidates.
+
+        Returns:
+            (global_section, integrity_flag)
+            integrity_flag: 1.0 (Valid) or 0.0 (Invalid)
+        """
+        # 1. Compute Cohomology (Topology Check)
+        # Use tolerance from the internal engine's sheaf configuration
+        is_consistent, _ = Sheaf.compute_cohomology_tensor(
+            proposals, tolerance=self.cohomology.sheaf.tolerance
+        )
+
+        # 2. Compute Global Section (Average)
+        # Even if inconsistent, we return the average, but flag it as corrupt.
+        global_section = torch.mean(proposals, dim=0)
+
+        # 3. Sentinel: Input Validation (NaNs/Infs check on tensor)
+        has_nans = torch.isnan(proposals).any()
+        has_infs = torch.isinf(proposals).any()
+        is_corrupt = has_nans | has_infs
+
+        # Final Integrity Flag
+        # If not consistent OR corrupt -> 0.0
+        # is_consistent returns 1.0 if consistent
+
+        # Valid = Consistent AND Not Corrupt
+        # is_consistent is 0.0 or 1.0
+        # is_corrupt is bool, cast to float -> 0.0 or 1.0
+
+        integrity = is_consistent * (1.0 - is_corrupt.float())
+
+        return global_section, integrity
 
     def check_structural_integrity(self, latent_state: torch.Tensor) -> torch.Tensor:
         """
