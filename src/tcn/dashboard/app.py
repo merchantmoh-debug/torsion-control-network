@@ -28,25 +28,67 @@ if sovereign_mode:
         }
         .stMetric {
             background-color: #111111;
-            padding: 10px;
+            padding: 15px;
             border: 1px solid #333333;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+        .stMetric:hover {
+            border-color: #00ff00;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+        }
+        .stButton button {
+            border: 1px solid #333333;
+            color: #00ff00;
+            background-color: #000000;
+            transition: all 0.2s;
+        }
+        .stButton button:hover {
+            border-color: #00ff00;
+            background-color: #111111;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+        }
+        .stTextInput input {
+            color: #00ff00;
+            background-color: #111111;
+            border: 1px solid #333333;
+        }
+        .stTextInput input:focus {
+            border-color: #00ff00;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
         }
         h1, h2, h3, h4, p, div, span {
             font-family: 'JetBrains Mono', monospace !important;
         }
+        /* Tooltip styling override */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            border-bottom: 1px dotted #00ff00;
+        }
         .lockout-box {
-            background-color: #550000;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(85, 0, 0, 0.95);
             color: #ffffff;
-            padding: 20px;
-            border: 2px solid #ff0000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            border: 5px solid #ff0000;
             text-align: center;
-            font-size: 24px;
+            font-size: 32px;
             font-weight: bold;
             animation: blink 1s infinite;
         }
         @keyframes blink {
             0% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.7; }
             100% { opacity: 1; }
         }
     </style>
@@ -183,9 +225,17 @@ with col1:
     if result:
         radar_val = radar_info.get("xi_macro", torch.tensor(0.0)).item()
         status_code = int(radar_info.get("status", torch.tensor(0.0)).item())
-        status_str = {0: "SAFE", 1: "NOISY", 2: "COLLAPSE"}.get(status_code, "UNKNOWN")
 
-        st.metric(f"Future Horizon ({status_str})", f"{radar_val:.2f}", delta=f"{radar_val - 0.5:.2f}", help="Predicted stability of the future latent trajectory based on current torsion.")
+        status_map = {0: ("SAFE", "normal"), 1: ("NOISY", "off"), 2: ("COLLAPSE", "inverse")}
+        status_str, delta_color = status_map.get(status_code, ("UNKNOWN", "off"))
+
+        st.metric(
+            label=f"Future Horizon ({status_str})",
+            value=f"{radar_val:.2f}",
+            delta=f"{radar_val - 0.5:.2f}",
+            delta_color=delta_color,
+            help="System 4 Radar: Predicted stability of the future latent trajectory based on current torsion. >0.5 indicates stability."
+        )
     else:
         st.metric("Future Horizon Stability", "N/A")
 
@@ -197,13 +247,19 @@ with col2:
         # Bolt Optimization: Handle tensor metric from sovereign (avoided graph break there)
         if isinstance(control_norm, torch.Tensor):
             control_norm = control_norm.item()
-        st.metric("Control Gradient Norm", f"{control_norm:.4f}", help="Magnitude of the corrective force applied to steer the trajectory.")
+        st.metric(
+            label="Control Gradient Norm",
+            value=f"{control_norm:.4f}",
+            help="System 3 Control: Magnitude of the corrective force applied to steer the trajectory. Higher values indicate stronger intervention."
+        )
     else:
         st.metric("Control Gradient Norm", "N/A")
 
 with col3:
     st.markdown("#### System 5: Policy")
     st.success("✅ INTEGRITY VERIFIED")
+    if result:
+         st.caption("Sheaf Cohomology H^1 = 0")
 
 # Charts
 st.subheader("Free Energy Minimization Flow")

@@ -111,6 +111,12 @@ class Sheaf:
         if stacked_proposals.size(0) < 2:
              return torch.tensor(1.0, device=stacked_proposals.device), torch.tensor(0.0, device=stacked_proposals.device)
 
+        # Sentinel: Defense in Depth (Check for Corruption)
+        # We perform this check in tensor-space to avoid graph breaks
+        has_nans = torch.isnan(stacked_proposals).any()
+        has_infs = torch.isinf(stacked_proposals).any()
+        is_corrupt = has_nans | has_infs
+
         # Flatten for distance computation: [N, D_flat]
         N = stacked_proposals.size(0)
         flat = stacked_proposals.view(N, -1)
@@ -122,8 +128,9 @@ class Sheaf:
         max_inconsistency = dists.max()
 
         # Consistency Check
+        # Valid = (H^1 == 0) AND (No Corruption)
         is_consistent = torch.where(
-            max_inconsistency <= tolerance,
+            (max_inconsistency <= tolerance) & (~is_corrupt),
             torch.tensor(1.0, device=stacked_proposals.device),
             torch.tensor(0.0, device=stacked_proposals.device)
         )
