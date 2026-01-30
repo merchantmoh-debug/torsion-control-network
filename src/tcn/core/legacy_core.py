@@ -251,16 +251,45 @@ class ActiveInferenceController(nn.Module):
     - H(Q): Entropy (Exploration drive)
     """
 
-    def __init__(self, hidden_dim: int, vocab_size: int, beta: float = 0.1):
+    def __init__(self, hidden_dim: int, vocab_size: int, beta: float = 0.1,
+                 mpemba_mode: bool = False, initial_beta: float = 1.0, mpemba_decay: float = 0.95):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.vocab_size = vocab_size
         self.beta = beta
+
+        # Mpemba Annealing Configuration
+        self.mpemba_mode = mpemba_mode
+        self.initial_beta = initial_beta
+        self.mpemba_decay = mpemba_decay
+
         # Policy Head: Maps hidden states to action probabilities (Logits)
         self.policy_head = nn.Linear(hidden_dim, vocab_size)
 
+        # Mpemba Step Counter (Persistent state)
+        self.register_buffer('step_counter', torch.tensor(0, dtype=torch.long))
+
     def __repr__(self):
-        return f"ActiveInferenceController(dim={self.hidden_dim}, vocab={self.vocab_size}, beta={self.beta})"
+        return f"ActiveInferenceController(dim={self.hidden_dim}, vocab={self.vocab_size}, beta={self.beta}, mpemba={self.mpemba_mode})"
+
+    def get_current_beta(self) -> torch.Tensor:
+        """
+        Calculates effective beta based on Mpemba Annealing schedule.
+        Isomorphic to Quantum Mpemba Effect: Higher initial entropy (Temp) speeds up relaxation.
+        """
+        device = self.policy_head.weight.device
+        target_beta = torch.tensor(self.beta, device=device)
+
+        if not self.mpemba_mode:
+            return target_beta
+
+        # Annealing: beta_t = max(target, init * decay^t)
+        # Use tensor operations for JIT compatibility
+        decay = torch.tensor(self.mpemba_decay, device=device)
+        # Ensure float calculation for pow
+        annealed_beta = self.initial_beta * torch.pow(decay, self.step_counter.float())
+
+        return torch.maximum(target_beta, annealed_beta)
 
     def validate_inputs(self, hidden_states: torch.Tensor, target_probs: torch.Tensor):
         """Sentinel: Check inputs for optimization step."""
@@ -324,13 +353,17 @@ class ActiveInferenceController(nn.Module):
         # 3. Free Energy F
         # F = Energy - Beta * Entropy
         # Minimizing F -> Minimize KL (Align) & Maximize Entropy (Explore)
-        free_energy = kl_div - (self.beta * entropy)
+
+        # Bolt/Mpemba: Dynamic Beta
+        current_beta = self.get_current_beta()
+        free_energy = kl_div - (current_beta * entropy)
 
         # Bolt Optimization: Return detached tensors instead of blocking scalar floats
         metrics = {
             "F": free_energy, # Returns tensor
             "KL": kl_div,     # Returns tensor
-            "H": entropy      # Returns tensor
+            "H": entropy,     # Returns tensor
+            "beta": current_beta # Trace the temperature
         }
         return free_energy, metrics
 
@@ -386,6 +419,10 @@ class ActiveInferenceController(nn.Module):
         grads = torch.where(is_corrupt, torch.zeros_like(grads), grads)
 
         control_signal = -grads
+
+        # Bolt/Mpemba: Increment step counter if in annealing mode
+        if self.mpemba_mode:
+            self.step_counter.add_(1)
 
         return control_signal, free_energy, metrics
 
