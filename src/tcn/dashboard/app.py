@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # Custom CSS for Sovereign Aesthetic
-sovereign_mode = st.sidebar.checkbox("Sovereign Mode", value=True, help="Toggle the high-contrast Sovereign aesthetic.")
+sovereign_mode = st.sidebar.checkbox("Sovereign Mode", value=True, help="Toggle the high-contrast Sovereign aesthetic (Cyberpunk/Neon theme).")
 
 if sovereign_mode:
     st.markdown("""
@@ -112,6 +112,12 @@ if "sovereign" not in st.session_state:
 st.sidebar.header("🕹️ Command Deck")
 st.sidebar.success("System Status: ONLINE")
 
+# Palette: System Integrity Pulse
+if st.session_state.get("inject_lie", False):
+    st.sidebar.error("🔴 INTEGRITY COMPROMISED")
+else:
+    st.sidebar.success("🟢 INTEGRITY OPTIMAL")
+
 # Sentinel Input Validation
 torsion_strength = st.sidebar.slider("Torsion Strength (Alpha)", 0.0, 1.0, 0.1, help="Controls the curvature intensity of the narrative arc.")
 entropy_beta = st.sidebar.slider("Entropy Beta (Explore)", 0.0, 1.0, 0.1, help="Balances between exploitation (coherence) and exploration (creativity).")
@@ -123,7 +129,7 @@ st.session_state.sovereign.sys3_control.aic.beta = entropy_beta
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚠️ Adversarial Testing")
 
-if st.sidebar.button("INJECT TRUTH OBSTRUCTION"):
+if st.sidebar.button("INJECT TRUTH OBSTRUCTION", help="Injects an obstruction (H^1 != 0) into the Sheaf to test System 5 Lockout."):
     st.session_state.inject_lie = True
 else:
     st.session_state.inject_lie = False
