@@ -444,7 +444,8 @@ class LyapunovStability:
     """
 
     def __init__(self, window_size: int = 10, threshold: float = 1e-4):
-        self.history = []
+        # Bolt Optimization: Use tensor buffer for JIT compatibility
+        self.history = None
         self.window_size = window_size
         self.threshold = threshold
 
@@ -461,14 +462,19 @@ class LyapunovStability:
 
         # Check corruption (non-blocking)
         is_corrupt = torch.isnan(val) | torch.isinf(val)
+        val_clean = torch.where(is_corrupt, torch.tensor(0.0, device=val.device), val).detach()
 
-        # We store detached tensor to avoid graph memory leaks
-        # Dynamo handles list mutation (recompiles until window size reached)
-        self.history.append(val.detach())
-        if len(self.history) > self.window_size:
-            self.history.pop(0)
+        # Update History Tensor (avoiding list mutation for graph break prevention)
+        if self.history is None:
+             self.history = val_clean.unsqueeze(0)
+        else:
+             self.history = torch.cat([self.history, val_clean.unsqueeze(0)])
 
-        if len(self.history) < 2:
+        # Maintain fixed window size
+        if self.history.size(0) > self.window_size:
+             self.history = self.history[-self.window_size:]
+
+        if self.history.size(0) < 2:
             return torch.tensor(True, device=val.device), torch.tensor(0.0, device=val.device)
 
         # Calculate discrete derivative dV/dt
@@ -483,4 +489,4 @@ class LyapunovStability:
         return is_stable, delta
 
     def reset(self):
-        self.history = []
+        self.history = None
