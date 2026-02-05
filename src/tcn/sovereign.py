@@ -68,6 +68,7 @@ class SovereignEntity(nn.Module):
         # --- PHASE 2: TRUTH ARBITRATION (System 5) ---
         # If we have multiple inputs (or self-reflection), verify Cohomology
         integrity_truth = torch.tensor(1.0, device=hidden_states.device)
+        integrity_error = torch.tensor(0.0, device=hidden_states.device)
 
         if external_proposals is not None and len(external_proposals) > 0:
             # Stack proposals
@@ -76,7 +77,7 @@ class SovereignEntity(nn.Module):
             stacked = torch.stack(proposals_list)
 
             # Arbitrate Tensor (No Exceptions)
-            _, integrity_truth = self.sys5_policy.arbitrate_tensor(stacked)
+            _, integrity_truth, integrity_error = self.sys5_policy.arbitrate_tensor(stacked)
 
         # --- PHASE 3: OPTIMIZATION (System 3) ---
         # Calculate Free Energy gradients
@@ -113,6 +114,7 @@ class SovereignEntity(nn.Module):
                 "control": control_packet['metrics'],
                 "control_norm": control_norm,
                 "stable": control_packet['is_stable'],
-                "integrity": system_integrity # Bolt: Passed to outer loop for handling
+                "integrity": system_integrity, # Bolt: Passed to outer loop for handling
+                "truth_divergence": integrity_error # ARK: Palette Telemetry
             }
         }

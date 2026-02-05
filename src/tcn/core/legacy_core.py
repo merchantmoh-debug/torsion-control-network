@@ -21,6 +21,7 @@ from torch.autograd import grad
 from typing import Tuple, Dict, Optional, Union, List, Any
 import logging
 import math
+from tcn.errors import SovereignLockoutError
 
 # Configure ARK Logger
 logger = logging.getLogger("ARK.TCN")
@@ -72,6 +73,10 @@ class RiemannianManifold:
         # Sentinel: Sequence length check
         if s <= 1:
             logger.warning("Sequence length <= 1, covariance estimation will be unstable/degenerate.")
+
+        # Bolt Optimization: Check for High-Dim Explosion
+        if d > 1024:
+            logger.warning(f"Computing dense metric tensor for dim={d} (O(D^2)). Use compute_implicit_metric for performance.")
 
         # Center the states (Mean subtraction)
         mean = hidden_states.mean(dim=1, keepdim=True)
@@ -411,7 +416,7 @@ class ActiveInferenceController(nn.Module):
                 grads = grad(free_energy, h_curr, create_graph=False)[0]
             except RuntimeError as e:
                 logger.error(f"Gradient computation failed: {e}")
-                grads = torch.zeros_like(h_curr)
+                raise SovereignLockoutError(f"Optimization Failure: Gradient computation collapsed. {e}")
 
         # Check for exploding gradients
         # Bolt Optimization: Tensor-based check to avoid graph breaks
