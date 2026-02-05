@@ -5,7 +5,8 @@ import numpy as np
 import torch
 import time
 import html
-from tcn.sovereign import SovereignEntity, SovereignLockoutError
+from tcn.sovereign import SovereignEntity
+from tcn.errors import SovereignLockoutError
 
 # Palette Upgrade: Sovereign Styling
 st.set_page_config(
@@ -67,23 +68,10 @@ if sovereign_mode:
             display: inline-block;
             border-bottom: 1px dotted #00ff00;
         }
-        .lockout-box {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-color: rgba(85, 0, 0, 0.95);
-            color: #ffffff;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-            border: 5px solid #ff0000;
-            text-align: center;
-            font-size: 32px;
-            font-weight: bold;
+        /* Lockout styling applied to container */
+        .stException {
+            font-family: 'JetBrains Mono', monospace !important;
+            border: 2px solid #ff0000 !important;
             animation: blink 1s infinite;
         }
         @keyframes blink {
@@ -148,14 +136,9 @@ if st.sidebar.button("HARD RESET SYSTEM"):
 # --- Main Logic Loop ---
 
 if st.session_state.locked_out:
-    # Sentinel: Sanitize output to prevent XSS
-    safe_message = html.escape(st.session_state.lockout_message)
-    st.markdown(f"""
-    <div class="lockout-box">
-        🔒 SOVEREIGN LOCKOUT ENGAGED<br>
-        {safe_message}
-    </div>
-    """, unsafe_allow_html=True)
+    # Sentinel: Secure Display (No raw HTML injection)
+    st.error("🔒 SOVEREIGN LOCKOUT ENGAGED")
+    st.exception(SovereignLockoutError(st.session_state.lockout_message))
     st.stop()
 
 # 1. Generate Input Stream (Simulated LLM Latent State)
@@ -263,9 +246,29 @@ with col2:
 
 with col3:
     st.markdown("#### System 5: Policy")
-    st.success("✅ INTEGRITY VERIFIED")
+
     if result:
-         st.caption("Sheaf Cohomology H^1 = 0")
+        divergence = result["metrics"].get("truth_divergence", torch.tensor(0.0)).item()
+
+        if divergence > 1e-3:
+            st.metric(
+                label="Truth Divergence (H^1)",
+                value=f"{divergence:.4f}",
+                delta="OBSTRUCTION DETECTED",
+                delta_color="inverse",
+                help="Sheaf Cohomology Divergence. Non-zero values indicate logical inconsistency or hallucination."
+            )
+            st.error("❌ TRUTH COLLAPSE")
+        else:
+            st.metric(
+                label="Truth Divergence (H^1)",
+                value=f"{divergence:.4f}",
+                delta="OPTIMAL",
+                help="Sheaf Cohomology Divergence. 0.0 indicates perfect logical consistency."
+            )
+            st.success("✅ INTEGRITY VERIFIED")
+    else:
+        st.metric("Truth Divergence", "N/A")
 
 # Charts
 st.subheader("Free Energy Minimization Flow")

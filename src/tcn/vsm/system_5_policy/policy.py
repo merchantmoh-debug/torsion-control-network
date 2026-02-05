@@ -10,15 +10,9 @@ import torch
 import logging
 from typing import Dict, Any, Optional, Tuple
 from tcn.math.sheaf import CohomologyEngine, ConstraintViolationError, Sheaf
+from tcn.errors import SovereignLockoutError
 
 logger = logging.getLogger("ARK.Sentinel")
-
-class SovereignLockoutError(Exception):
-    """
-    RAISED WHEN: H^1 != 0 (Truth Violation).
-    ACTION: Immediate Halt. "Death before Lie".
-    """
-    pass
 
 class SoundHeart:
     """
@@ -56,7 +50,7 @@ class SoundHeart:
                 f"Details: {str(e)}"
             )
 
-    def arbitrate_tensor(self, proposals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def arbitrate_tensor(self, proposals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Bolt/Sentinel JIT-Safe Arbitration.
 
@@ -64,12 +58,13 @@ class SoundHeart:
             proposals: [N, Batch, Seq, Dim] - Stacked candidates.
 
         Returns:
-            (global_section, integrity_flag)
+            (global_section, integrity_flag, divergence_val)
             integrity_flag: 1.0 (Valid) or 0.0 (Invalid)
+            divergence_val: Magnitude of Sheaf Inconsistency (H^1)
         """
         # 1. Compute Cohomology (Topology Check)
         # Use tolerance from the internal engine's sheaf configuration
-        is_consistent, _ = Sheaf.compute_cohomology_tensor(
+        is_consistent, max_inconsistency = Sheaf.compute_cohomology_tensor(
             proposals, tolerance=self.cohomology.sheaf.tolerance
         )
 
@@ -92,7 +87,7 @@ class SoundHeart:
 
         integrity = is_consistent * (1.0 - is_corrupt.float())
 
-        return global_section, integrity
+        return global_section, integrity, max_inconsistency
 
     def check_structural_integrity(self, latent_state: torch.Tensor) -> torch.Tensor:
         """
