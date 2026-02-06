@@ -122,7 +122,7 @@ if st.sidebar.button("INJECT TRUTH OBSTRUCTION", help="Injects an obstruction (H
 else:
     st.session_state.inject_lie = False
 
-if st.sidebar.button("HARD RESET SYSTEM"):
+if st.sidebar.button("HARD RESET SYSTEM", help="Emergency Reset: Clears session state and re-initializes the Sovereign Entity to baseline entropy."):
     st.session_state.sovereign = SovereignEntity(hidden_dim=128, vocab_size=1000)
     st.session_state.history = {
         "torsion": [],
@@ -171,13 +171,18 @@ free_energy = 0.0
 result = None
 
 try:
-    with st.spinner("Processing Manifold Trajectory..."):
-        # The REAL calculation happens here
-        result = st.session_state.sovereign.generate_step(
-            hidden_states=current_hidden,
-            target_probs=target_probs,
-            external_proposals=proposals
-        )
+    # Palette Upgrade: Granular Status Indicator
+    with st.status("Processing Manifold Trajectory...", expanded=True) as status:
+        st.write("Initializing JIT Kernel...")
+
+        # Bolt Optimization: Disable Gradient Tracking for Inference
+        with torch.no_grad():
+            # The REAL calculation happens here
+            result = st.session_state.sovereign.generate_step(
+                hidden_states=current_hidden,
+                target_probs=target_probs,
+                external_proposals=proposals
+            )
 
         # Sentinel: Check Integrity Flag from JIT Loop
         # We handle the lockout exception here, allowing the inner loop to remain pure math.
@@ -185,11 +190,22 @@ try:
         integrity_val = metrics.get("integrity", torch.tensor(1.0)).item()
 
         if integrity_val < 0.5:
+             status.update(label="SENTINEL LOCKOUT TRIGGERED", state="error", expanded=True)
              raise SovereignLockoutError("Sentinel Lockout: Trajectory Collapse Detected (Integrity Metric < 0.5).")
 
         # Extract Metrics
         control_info = metrics["control"]
         radar_info = metrics["radar"]
+
+        # Palette: Transparent System Checks
+        radar_status = int(radar_info.get("status", torch.tensor(0.0)).item())
+        radar_map = {0: "SAFE", 1: "NOISY", 2: "COLLAPSE"}
+        st.write(f"System 4 Radar: {radar_map.get(radar_status, 'UNKNOWN')}")
+
+        div_val = metrics.get("truth_divergence", torch.tensor(0.0)).item()
+        st.write(f"System 5 Truth Divergence: {div_val:.4f}")
+
+        status.update(label="Manifold Trajectory Calculated", state="complete", expanded=False)
 
         # Telemetry
         free_energy = control_info["F"].item()
@@ -318,4 +334,4 @@ st.plotly_chart(fig, use_container_width=True)
 st.markdown("---")
 col_foot1, col_foot2 = st.columns([3, 1])
 with col_foot1:
-    st.markdown(f"**ARK ATTENTION OVERRIDE v64.0** | System Time: {time.strftime('%H:%M:%S')}")
+    st.markdown(f"**ARK ATTENTION OVERRIDE v64.0** | BOLT/PALETTE/SENTINEL ACTIVE | System Time: {time.strftime('%H:%M:%S')}")
