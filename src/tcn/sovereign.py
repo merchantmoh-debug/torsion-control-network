@@ -9,6 +9,9 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any
 
+# Bolt Optimization: Enable Tensor Cores for War Speed Matrix Multiplication
+torch.set_float32_matmul_precision('high')
+
 from tcn.vsm.system_1_ops.ops import KineticOperator
 from tcn.vsm.system_2_coord.coord import Coordinator
 from tcn.vsm.system_3_control.control import MAOSKernel
